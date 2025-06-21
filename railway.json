@@ -1,0 +1,7 @@
+{
+  "deploy": {
+    "startCommand": "python hellbot.py",
+    "restartPolicyType": "ON_FAILURE",
+    "startTimeout": 120
+  }
+}
