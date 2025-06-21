@@ -185,17 +185,20 @@ async def call_deepseek(prompt: str) -> str:
 # GROUP MENTION HANDLER (SPECIAL CASE)
 # --------------------------------------
 async def handle_mention(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    # Verify the mention is for THIS bot
-    mentioned_username = update.message.text[
-                         update.message.entities[0].offset: update.message.entities[0].offset + update.message.entities[
-                             0].length
-                         ]
-    if mentioned_username.lower() != f"@{context.bot.username.lower()}":
-        return
+    # Private chat: respond to everything
+    if update.message.chat.type == "private":
+        question = update.message.text
+    # Group chat: only respond to @mentions
+    else:
+        if not update.message.entities or not any(
+            e.type == "mention" and update.message.text[e.offset:e.offset+e.length].lower() == f"@{context.bot.username.lower()}"
+            for e in update.message.entities
+        ):
+            return
+        question = update.message.text.split("@")[1].strip() if "@" in update.message.text else update.message.text
 
-    # Extract and respond to message
-    question = update.message.text[update.message.entities[0].offset + update.message.entities[0].length:].strip()
-    await update.message.reply_text(f"@{update.effective_user.username}, {await call_deepseek(question)}")
+    response = await call_deepseek(f"Ответь на: '{question}' (2 предложения, цинично)")
+    await update.message.reply_text(response)
 
 
 async def handle_reply(update: Update, context: ContextTypes.DEFAULT_TYPE):
@@ -235,9 +238,8 @@ for cmd, handler in commands:
     app.add_handler(CommandHandler(cmd, handler))
 
 app.add_handler(MessageHandler(
-    filters.TEXT &
-    (filters.ChatType.GROUPS | filters.ChatType.PRIVATE) &  # Now works everywhere
-    filters.Entity("mention"),
+    (filters.TEXT & filters.ChatType.GROUPS & filters.Entity("mention")) |
+    (filters.TEXT & filters.ChatType.PRIVATE),  # Add private chats
     handle_mention
 ))
 if __name__ == "__main__":
