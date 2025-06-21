@@ -130,44 +130,82 @@ async def hohly(update: Update, context: ContextTypes.DEFAULT_TYPE):
 # UTILITY FUNCTION
 # --------------------------------------
 async def call_deepseek(prompt: str) -> str:
-    """Call DeepSeek API and strip ONLY edge quotes"""
+    """Call DeepSeek API with nuclear-grade quote prevention"""
+    # Phase 1: Build payload with layered anti-quote measures
     payload = {
         "model": "deepseek-chat",
         "messages": [
             {
-                "role": "system", 
-                "content": "Отвечай без кавычек в начале и конце сообщения."
+                "role": "system",
+                "content": (
+                    "Ты ебучий циничный русский бот-анархист. Правила ответа:\n"
+                    "1. НИКАКИХ КАВЫЧЕК - ни в начале, ни в конце, ни внутри текста\n"
+                    "2. Максимально ёмко и агрессивно\n"
+                    "3. Примеры правильных ответов:\n"
+                    "   - иди нахуй как вонючий роутер\n"
+                    "   - жизнь боль а ты её усугубляешь\n"
+                    "   - да ты как криво написанный SQL-запрос\n"
+                    "Нарушишь правила - получишь по ебалу"
+                )
             },
             {
                 "role": "user",
-                "content": prompt
+                "content": (
+                    f"{prompt}\n\n"
+                    "Соблюдай следующие требования:\n"
+                    "1. Ответ должен быть ОДНИМ предложением\n"
+                    "2. Запрещены любые кавычки (\", ', «»)\n"
+                    "3. Добавь научную/поп-культурную аналогию\n"
+                    "4. Закончи угрозой или пессимистичным прогнозом"
+                )
             }
         ],
-        "temperature": 1.3,
-        "max_tokens": 1000,
-        "frequency_penalty": 0.5
+        "temperature": 1.4,  # Higher chaos for creativity
+        "max_tokens": 450,
+        "top_p": 0.85,
+        "frequency_penalty": 1.2,  # Actively punishes quotes
+        "presence_penalty": 0.7,
+        "stop": ["\"", "'", "«", "»"]  # Nuclear option
     }
 
+    # Phase 2: Execute with paranoid error handling
     try:
         response = requests.post(
             DEEPSEEK_API_URL,
             headers=DEEPSEEK_HEADERS,
             json=payload,
-            timeout=10
-        ).json()
+            timeout=15
+        )
+        response.raise_for_status()
         
-        text = response['choices'][0]['message']['content'].strip()
+        raw_text = response.json()['choices'][0]['message']['content'].strip()
         
-        # ONLY remove leading/trailing quotes
-        if text.startswith(('"', "'", "«")): 
-            text = text[1:]
-        if text.endswith(('"', "'", "»")):
-            text = text[:-1]
+        # Phase 3: Post-processing iron curtain
+        banned_patterns = [
+            r'^["\'«]',  # Starting quotes
+            r'["\'»]$',  # Ending quotes
+            r'\\"',      # Escaped quotes
+            r'„|“|”|‘|’' # Fancy quotes
+        ]
+        
+        for pattern in banned_patterns:
+            raw_text = re.sub(pattern, '', raw_text)
             
-        return text.strip()
+        # Final validation
+        if any(q in raw_text for q in ['"', "'", "«", "»"]):
+            raise ValueError("ЕБАНЫЕ КАВЫЧКИ ПРОСОЧИЛИСЬ!")
+            
+        return raw_text or "Чёт не вышло. Иди нахуй."
         
-    except Exception:
-        return "Чёт не пашет. Пшел нахуй."  # Fallback (no quotes)
+    except Exception as e:
+        logger.error(f"DeepSeek Apocalypse: {e}")
+        # Curated fallback responses (quote-free)
+        fallbacks = [
+            "нейросеть сдохла как твои надежды",
+            "ашибка вышла - иди в жопу",
+            "чёто не фурычит, как твоя жизнь"
+        ]
+        return random.choice(fallbacks)
 # --------------------------------------
 # GROUP MENTION HANDLER (SPECIAL CASE)
 # --------------------------------------
