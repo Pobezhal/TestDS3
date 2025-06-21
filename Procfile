@@ -1,1 +1,1 @@
-worker: python hellbot.py
+worker: python TestDS3.py
