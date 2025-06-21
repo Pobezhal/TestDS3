@@ -126,6 +126,16 @@ async def hohly(update: Update, context: ContextTypes.DEFAULT_TYPE):
     prompt = "Кратко и цинично объясни 'че там у хохлов' (3 предложения)"
     await update.message.reply_text(await call_deepseek(prompt))
 
+async def sage(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    """Восточная мудрость"""
+    prompt = "Придумай очень мудрую и глубокую по смыслу фразу в стиле восточной мудрости ( 3 предложения)"
+    await update.message.reply_text(await call_deepseek(prompt))
+    
+async def watts(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    """Цитата Уоттса"""
+    prompt = "Придумай очень глубокую и мудрую фразу в стиле философа Алана Уоттса (3 предложения)"
+    await update.message.reply_text(await call_deepseek(prompt))
+
 # --------------------------------------
 # UTILITY FUNCTION
 # --------------------------------------
@@ -137,10 +147,10 @@ async def call_deepseek(prompt: str) -> str:
             {
                 "role": "system",
                 "content": (
-                    "Ты ебучий типичный русский беглый либерал-сексолог. Правила ответа:\n"
+                    "Ты ебучий типичный русский беглый остроумный либерал-сексолог. Правила ответа:\n"
                     "1. НИКАКИХ КАВЫЧЕК\n"
-                    "2. Максимально агрессивно\n"
-                    "3. Пример: пошел ты нахуй как вонючий роутер, чертополох ебаный."
+                    "2. Весело и остроумно, с подколами\n"
+                    "3. Пример: Иди прогуляйся макака тупорогая, ебанный дегенерат."
                 )
             },
             {
@@ -197,7 +207,7 @@ async def handle_mention(update: Update, context: ContextTypes.DEFAULT_TYPE):
             return
         question = update.message.text.split("@")[1].strip() if "@" in update.message.text else update.message.text
 
-    response = await call_deepseek(f"Ответь на: '{question}' (2 предложения, цинично)")
+    response = await call_deepseek(f"Ответь на: '{question}' (2 предложения, цинично, но по делу)")
     await update.message.reply_text(response)
 
 
@@ -207,7 +217,7 @@ async def handle_reply(update: Update, context: ContextTypes.DEFAULT_TYPE):
         return  # Not a reply to our bot
 
     question = update.message.text
-    prompt = f"Ответь на реплику '{question}' (макс. 3 предложения, цинично)"
+    prompt = f"Ответь на реплику '{question}' (макс. 3 предложения, цинично, но по делу)"
     response = await call_deepseek(prompt)
     await update.message.reply_text(response)
 
@@ -231,7 +241,9 @@ commands = [
     ("sych", sych),
     ("putin", putin),
     ("zhir", zhir),
-    ("hohly", hohly)
+    ("hohly", hohly),
+    ("sage", sage),
+    ("watts", watts)
 ]
 
 for cmd, handler in commands:
