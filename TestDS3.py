@@ -35,7 +35,7 @@ DEEPSEEK_HEADERS = {
 async def news(update: Update, context: ContextTypes.DEFAULT_TYPE):
     """Проверить новости в интернете на сегодня"""
     prompt = (
-        "Как либеральный комментатор, кратко (2-3 предложения) изложи свежую политическую новость из России, "
+        "Как либеральный комментатор, кратко (3-4 предложения) изложи свежую политическую новость из России, "
         "встроив саркастичный/едкий комментарий прямо в текст. Формат:\n"
         "'[Факт новости], [циничный анализ]. [Ещё один факт], [язвительное замечание].'\n"
         "Примеры:\n"
@@ -113,12 +113,12 @@ async def sych(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
 async def putin(update: Update, context: ContextTypes.DEFAULT_TYPE):
     """Цитата Путина"""
-    prompt = "Придумай фразу в стиле Владимира Путина (1 предложение, провокационно)"
+    prompt = "Придумай фразу в стиле Владимира Путина (2 предложения, очень провокационно)"
     await update.message.reply_text(await call_deepseek(prompt))
 
 async def zhir(update: Update, context: ContextTypes.DEFAULT_TYPE):
     """Цитата Жириновского"""
-    prompt = "Придумай резкую фразу в стиле Жириновского (1 предложение, провокационно)"
+    prompt = "Придумай резкую фразу в стиле Жириновского (2 предложения, провокационно)"
     await update.message.reply_text(await call_deepseek(prompt))
 
 async def hohly(update: Update, context: ContextTypes.DEFAULT_TYPE):
@@ -145,11 +145,11 @@ async def call_deepseek(prompt: str) -> str:
             },
             {
                 "role": "user", 
-                "content": f"{prompt}\n\nОтветь одним предложением без кавычек."
+                "content": f"{prompt}\n\nОтветь двумя предложениями без кавычек."
             }
         ],
         "temperature": 1.4,
-        "max_tokens": 550,
+        "max_tokens": 700,
         "frequency_penalty": 1
     }
 
@@ -207,7 +207,7 @@ async def handle_reply(update: Update, context: ContextTypes.DEFAULT_TYPE):
         return  # Not a reply to our bot
 
     question = update.message.text
-    prompt = f"Ответь на реплику '{question}' (макс. 2 предложения, цинично)"
+    prompt = f"Ответь на реплику '{question}' (макс. 3 предложения, цинично)"
     response = await call_deepseek(prompt)
     await update.message.reply_text(response)
 
