@@ -130,33 +130,22 @@ async def hohly(update: Update, context: ContextTypes.DEFAULT_TYPE):
 # UTILITY FUNCTION
 # --------------------------------------
 async def call_deepseek(prompt: str) -> str:
-    """Call DeepSeek API with turbocharged sarcasm"""
-    cynic_prompt = (
-        f"{prompt}\n\n"
-        "Требования к ответу:\n"
-        "1. Обязательно используй матерные слова (пизда, хуйня, блядь)\n"
-        "2. Добавь научные/исторические аналогии для издевки\n"
-        "3. Встрой неожиданное сравнение из поп-культуры\n"
-        "4. Закончи угрозой или пессимистичным прогнозом\n"
-        "Пример:\n"
-        "'Эта хуйня напоминает квантовую физику - никто не понимает, но все делают вид (как твой начальник). "
-        "Закончим как герои Игры Престолов - внезапно и плохо.'"
-    )
-
+    """Call DeepSeek API and strip ONLY edge quotes"""
     payload = {
         "model": "deepseek-chat",
-        "messages": [{
-            "role": "system",
-            "content": "Ты циничный русскоязычный интеллектуал-анархист. Смешиваешь научные термины с матом."
-        }, {
-            "role": "user",
-            "content": cynic_prompt
-        }],
-        "temperature": 1.3,  # Increased for creativity
+        "messages": [
+            {
+                "role": "system", 
+                "content": "Отвечай без кавычек в начале и конце сообщения."
+            },
+            {
+                "role": "user",
+                "content": prompt
+            }
+        ],
+        "temperature": 1.3,
         "max_tokens": 1000,
-        "top_p": 0.9,
-        "frequency_penalty": 0.7,  # Discourages blandness
-        "presence_penalty": 0.5  # Encourages novelty
+        "frequency_penalty": 0.5
     }
 
     try:
@@ -166,15 +155,19 @@ async def call_deepseek(prompt: str) -> str:
             json=payload,
             timeout=10
         ).json()
-        return response['choices'][0]['message']['content'].strip()
-
-    except Exception as e:
-        logger.error(f"API Error: {e}")
-        return random.choice([
-            "Блядь, нейросеть опять курит в туалете...",
-            "Чёт не выходит. Как твои жизненные планы.",
-            "Ответ задержался, как зарплата в госучреждении."
-        ])
+        
+        text = response['choices'][0]['message']['content'].strip()
+        
+        # ONLY remove leading/trailing quotes
+        if text.startswith(('"', "'", "«")): 
+            text = text[1:]
+        if text.endswith(('"', "'", "»")):
+            text = text[:-1]
+            
+        return text.strip()
+        
+    except Exception:
+        return "Чёт не пашет. Пшел нахуй."  # Fallback (no quotes)
 # --------------------------------------
 # GROUP MENTION HANDLER (SPECIAL CASE)
 # --------------------------------------
@@ -230,7 +223,7 @@ for cmd, handler in commands:
 
 app.add_handler(MessageHandler(
     filters.TEXT &
-    filters.ChatType.GROUPS &
+    (filters.ChatType.GROUPS | filters.ChatType.PRIVATE) &  # Now works everywhere
     filters.Entity("mention"),
     handle_mention
 ))
