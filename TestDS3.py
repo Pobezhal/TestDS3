@@ -129,7 +129,7 @@ async def randomeme(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
 async def sych(update: Update, context: ContextTypes.DEFAULT_TYPE):
     """Оправдание одиночества"""
-    prompt = "Объясни почему тянки не нужны, а быть одиноким сычем - классно (3 предложения, цинично)"
+    prompt = "Объясни почему тян не нужны, а быть одиноким сычем - классно (3 предложения, цинично)"
     await update.message.reply_text(await call_deepseek(prompt))
 
 async def putin(update: Update, context: ContextTypes.DEFAULT_TYPE):
