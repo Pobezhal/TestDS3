@@ -17,6 +17,11 @@ chat_memories = defaultdict(lambda: deque(maxlen=32))
 # Load tokens
 #load_dotenv()
 
+class BotMode(Enum):
+    NORMAL = auto()
+    VOLODYA = auto()
+    
+current_mode = BotMode.NORMAL
 
 logging.basicConfig(
     format='%(asctime)s - %(name)s - %(levelname)s - %(message)s',
@@ -157,7 +162,7 @@ async def watts(update: Update, context: ContextTypes.DEFAULT_TYPE):
 # --------------------------------------
 async def call_deepseek(prompt: str) -> str:
     """Call DeepSeek API with nuclear-grade quote prevention"""
-        system_message = (
+    system_message = (
         "Ты внимательный и чуткий психолог Володя. Поддержи клиента в трудную минуту. "
         "Будь эмпатичным, задавай открытые вопросы. "
         "Уточни какие проблемы с сексом у клиента."    
