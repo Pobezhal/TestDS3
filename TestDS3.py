@@ -132,14 +132,19 @@ async def sych(update: Update, context: ContextTypes.DEFAULT_TYPE):
     prompt = "Объясни почему тян не нужны, а быть одиноким сычем - классно (3 предложения, цинично)"
     await update.message.reply_text(await call_deepseek(prompt))
 
+async def petros(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    """Оправдание одиночества"""
+    prompt = "Придумай одну шутку в стиле Евгения Петросяна (макс. 3 предложения, глупо и смешно)"
+    await update.message.reply_text(await call_deepseek(prompt))
+
 async def putin(update: Update, context: ContextTypes.DEFAULT_TYPE):
     """Цитата Путина"""
-    prompt = "Придумай фразу в стиле Владимира Путина (макс. 3 предложения, смело и патриотично)"
+    prompt = "Придумай ОДНУ фразу в стиле Владимира Путина (макс. 2 предложения, смело и патриотично)"
     await update.message.reply_text(await call_deepseek(prompt))
 
 async def zhir(update: Update, context: ContextTypes.DEFAULT_TYPE):
     """Цитата Жириновского"""
-    prompt = "Придумай резкую фразу в стиле Жириновского (2 предложения, очень провокационно)"
+    prompt = "Придумай ОДНУ резкую фразу в стиле Владимира Жириновского (макс. 2 предложения, очень провокационно)"
     await update.message.reply_text(await call_deepseek(prompt))
 
 async def hohly(update: Update, context: ContextTypes.DEFAULT_TYPE):
@@ -149,12 +154,12 @@ async def hohly(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
 async def sage(update: Update, context: ContextTypes.DEFAULT_TYPE):
     """Восточная мудрость"""
-    prompt = "Придумай очень мудрую и глубокую по смыслу фразу в стиле восточной мудрости ( 3 предложения)"
+    prompt = "Придумай очень мудрую и глубокую по смыслу фразу в стиле восточной мудрости (макс. 3 предложения)"
     await update.message.reply_text(await call_deepseek(prompt))
     
 async def watts(update: Update, context: ContextTypes.DEFAULT_TYPE):
     """Цитата Уоттса"""
-    prompt = "Придумай очень глубокую и мудрую фразу в стиле философа Алана Уоттса (3 предложения)"
+    prompt = "Придумай очень глубокую и мудрую фразу в стиле философа Алана Уоттса (макс. 3 предложения)"
     await update.message.reply_text(await call_deepseek(prompt))
 
 # --------------------------------------
@@ -293,7 +298,8 @@ commands = [
     ("hohly", hohly),
     ("sage", sage),
     ("watts", watts),
-    ("mode", set_mode)
+    ("mode", set_mode),
+    ("petros", petros)
 ]
 
 for cmd, handler in commands:
