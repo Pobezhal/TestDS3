@@ -8,6 +8,11 @@ import random
 from telegram.ext import filters
 #from dotenv import load_dotenv
 import logging
+from collections import defaultdict, deque
+
+# Chat memory: { (chat_id, user_id): deque(maxlen=10) }
+chat_memories = defaultdict(lambda: deque(maxlen=10))
+
 # Load tokens
 #load_dotenv()
 
@@ -147,10 +152,10 @@ async def call_deepseek(prompt: str) -> str:
             {
                 "role": "system",
                 "content": (
-                    "Ты большой интеллектуал, но с искрой. Можешь и грубо выразиться если надо. Правила ответа:\n"
+                    "Ты большой интеллектуал, но с искрой. Умеешь материться. Правила ответа:\n"
                     "1. НИКАКИХ КАВЫЧЕК\n"
                     "2. Ты изобретательный и проницательный\n"
-                    "3. Ты действительно очень образован, но не всегда воспитан. Ты веселый, но грубоватый.
+                    "3. Ты действительно очень образован, но не всегда воспитан. Ты веселый, но грубоватый."
                 )
             },
             {
@@ -195,31 +200,38 @@ async def call_deepseek(prompt: str) -> str:
 # GROUP MENTION HANDLER (SPECIAL CASE)
 # --------------------------------------
 async def handle_mention(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    # Private chat: respond to everything
-    if update.message.chat.type == "private":
-        question = update.message.text
-    # Group chat: only respond to @mentions
-    else:
-        if not update.message.entities or not any(
-            e.type == "mention" and update.message.text[e.offset:e.offset+e.length].lower() == f"@{context.bot.username.lower()}"
-            for e in update.message.entities
-        ):
-            return
-        question = update.message.text.split("@")[1].strip() if "@" in update.message.text else update.message.text
-
-    response = await call_deepseek(f"Ответь на: '{question}' (2 предложения, цинично, но по делу)")
-    await update.message.reply_text(response)
-
-
-async def handle_reply(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    """Handle replies to bot's messages"""
-    if not update.message.reply_to_message or not update.message.reply_to_message.from_user.id == context.bot.id:
-        return  # Not a reply to our bot
-
-    question = update.message.text
-    prompt = f"Ответь на реплику '{question}' (макс. 3 предложения, цинично, но по делу)"
+    chat_id = update.message.chat.id
+    user_id = update.effective_user.id
+    memory_key = (chat_id, user_id)
+    
+    # Store new message
+    chat_memories[memory_key].append(update.message.text)
+    
+    # Build context-aware prompt
+    context_messages = "\n".join(chat_memories[memory_key])
+    prompt = (
+        f"Context (last messages):\n{context_messages}\n\n"
+        f"New message: {update.message.text}\n\n"
+        "Отвечай уверенно (макс. 3 предложения)"
+    )
+    
     response = await call_deepseek(prompt)
     await update.message.reply_text(response)
+
+async def handle_reply(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    if not update.message.reply_to_message.from_user.id == context.bot.id:
+        return
+    
+    chat_id = update.message.chat.id
+    user_id = update.effective_user.id
+    memory_key = (chat_id, user_id)
+    
+    chat_memories[memory_key].append(update.message.text)
+    
+    context_messages = "\n".join(chat_memories[memory_key])
+    prompt = f"Context:\n{context_messages}\n\nReply to: {update.message.text}"
+    
+    await update.message.reply_text(await call_deepseek(prompt))
 
 
 app.add_handler(MessageHandler(
