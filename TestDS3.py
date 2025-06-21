@@ -35,7 +35,7 @@ DEEPSEEK_HEADERS = {
 async def news(update: Update, context: ContextTypes.DEFAULT_TYPE):
     """Проверить новости в интернете на сегодня"""
     prompt = (
-        "Как либеральный комментатор, кратко (3-4 предложения) изложи свежую политическую новость из России, "
+        "Как спортивный комментатор, энергично (5-6 предложений) изложи свежую политическую новость из России, "
         "встроив саркастичный/едкий комментарий прямо в текст. Формат:\n"
         "'[Факт новости], [циничный анализ]. [Ещё один факт], [язвительное замечание].'\n"
         "Примеры:\n"
@@ -48,14 +48,14 @@ async def news(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
 async def wtf(update: Update, context: ContextTypes.DEFAULT_TYPE):
     """Пояснить за жизнь"""
-    prompt = "Объясни смысл жизни очень цинично c использованием грязных выражений и мата (макс. 3 предложения)"
+    prompt = "Объясни смысл жизни очень цинично c использованием грязных выражений и мата (макс. 4 предложения)"
     await update.message.reply_text(await call_deepseek(prompt))
 
 
 async def problem(update: Update, context: ContextTypes.DEFAULT_TYPE):
     """Помочь решить проблему (один циничный совет)"""
     if not context.args:
-        await update.message.reply_text("Эх, без проблемы какой совет? Пиши через пробел, гений!")
+        await update.message.reply_text("Эх, без проблемы какой совет? Пиши через пробел, валера!")
         return
 
     user_problem = " ".join(context.args)
@@ -85,7 +85,7 @@ async def fugoff(update: Update, context: ContextTypes.DEFAULT_TYPE):
     target = context.args[0] if context.args and context.args[0].startswith("@") else "Всем петушкам в чатике:"
 
     prompt = (
-        f"Придумай креативное оскорбление для {target} (1 предложение). Начинай с маленькой буквы. "
+        f"Придумай креативное оскорбление для {target} (2 предложение). Начинай с маленькой буквы. "
         "Используй мат и сарказм. Не используй кавычки!.  Примеры:\n"
         "- 'чтоб тебе в метро Wi-Fi ловился только порносайтов!' \n"
         "- 'иди нахуй, как бабка на авито продает!' \n"
@@ -98,7 +98,7 @@ async def fugoff(update: Update, context: ContextTypes.DEFAULT_TYPE):
 async def randomeme(update: Update, context: ContextTypes.DEFAULT_TYPE):
     """Случайный мем/шутка (генерирует модель)"""
     prompt = (
-        "Сгенерируй случайный мем/шутку (1 предложение). "
+        "Сгенерируй случайный мем/шутку (макс. 3 предложения). "
         "Формат:\n"
         "- 'Когда делаешь 'git push --force' на прод...' \n"
         "- 'Российские дороги: где Waze предлагает вызвать экзорциста' \n"
@@ -108,7 +108,7 @@ async def randomeme(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
 async def sych(update: Update, context: ContextTypes.DEFAULT_TYPE):
     """Оправдание одиночества"""
-    prompt = "Объясни почему тян не нужны, а быть сычем - классно (макс. 2 предложения, цинично)"
+    prompt = "Объясни почему тян не нужны, а быть сычем - классно (3 предложения, цинично)"
     await update.message.reply_text(await call_deepseek(prompt))
 
 async def putin(update: Update, context: ContextTypes.DEFAULT_TYPE):
@@ -123,7 +123,7 @@ async def zhir(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
 async def hohly(update: Update, context: ContextTypes.DEFAULT_TYPE):
     """Новости про Украину"""
-    prompt = "Кратко и цинично объясни 'че там у хохлов' (2 предложения)"
+    prompt = "Кратко и цинично объясни 'че там у хохлов' (3 предложения)"
     await update.message.reply_text(await call_deepseek(prompt))
 
 # --------------------------------------
@@ -137,15 +137,15 @@ async def call_deepseek(prompt: str) -> str:
             {
                 "role": "system",
                 "content": (
-                    "Ты ебучий циничный русский либерал-анархист. Правила ответа:\n"
+                    "Ты ебучий типичный русский беглый либерал-сексолог. Правила ответа:\n"
                     "1. НИКАКИХ КАВЫЧЕК\n"
-                    "2. Максимально ёмко и агрессивно\n"
-                    "3. Пример: иди нахуй как вонючий роутер"
+                    "2. Максимально агрессивно\n"
+                    "3. Пример: пошел ты нахуй как вонючий роутер, чертополох ебаный."
                 )
             },
             {
                 "role": "user", 
-                "content": f"{prompt}\n\nОтветь двумя предложениями без кавычек."
+                "content": f"{prompt}\n\nОтветь тремя или четырьмя предложениями без кавычек."
             }
         ],
         "temperature": 1.4,
