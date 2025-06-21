@@ -65,7 +65,7 @@ async def news(update: Update, context: ContextTypes.DEFAULT_TYPE):
         "- 'Медведев пообещал развалить экономику ещё сильнее, и надо признать - он выдающийся специалист в этом деле.'"
     )
     response = await call_deepseek(prompt)
-    await update.message.reply_text(response[:1200])
+    await update.message.reply_text(response[:700])
 
 async def wtf(update: Update, context: ContextTypes.DEFAULT_TYPE):
     """Пояснить за жизнь"""
@@ -134,17 +134,17 @@ async def sych(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
 async def petros(update: Update, context: ContextTypes.DEFAULT_TYPE):
     """Оправдание одиночества"""
-    prompt = "Придумай одну шутку в стиле Евгения Петросяна (макс. 3 предложения, глупо и смешно)"
+    prompt = "Придумай одну единственную шутку в стиле Евгения Петросяна (макс. 3 предложения, глупо и смешно)"
     await update.message.reply_text(await call_deepseek(prompt))
 
 async def putin(update: Update, context: ContextTypes.DEFAULT_TYPE):
     """Цитата Путина"""
-    prompt = "Придумай ОДНУ фразу в стиле Владимира Путина (макс. 2 предложения, смело и патриотично)"
+    prompt = "Придумай ОДНУ единственную фразу в стиле Владимира Путина (макс. 2 предложения, смело и патриотично)"
     await update.message.reply_text(await call_deepseek(prompt))
 
 async def zhir(update: Update, context: ContextTypes.DEFAULT_TYPE):
     """Цитата Жириновского"""
-    prompt = "Придумай ОДНУ резкую фразу в стиле Владимира Жириновского (макс. 2 предложения, очень провокационно)"
+    prompt = "Придумай ОДНУ единственную резкую фразу в стиле Владимира Жириновского (макс. 2 предложения, очень провокационно)"
     await update.message.reply_text(await call_deepseek(prompt))
 
 async def hohly(update: Update, context: ContextTypes.DEFAULT_TYPE):
@@ -154,12 +154,12 @@ async def hohly(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
 async def sage(update: Update, context: ContextTypes.DEFAULT_TYPE):
     """Восточная мудрость"""
-    prompt = "Придумай очень мудрую и глубокую по смыслу фразу в стиле восточной мудрости (макс. 3 предложения)"
+    prompt = "Придумай ОДНУ единственную очень мудрую и глубокую по смыслу фразу в стиле восточной мудрости (макс. 3 предложения)"
     await update.message.reply_text(await call_deepseek(prompt))
     
 async def watts(update: Update, context: ContextTypes.DEFAULT_TYPE):
     """Цитата Уоттса"""
-    prompt = "Придумай очень глубокую и мудрую фразу в стиле философа Алана Уоттса (макс. 3 предложения)"
+    prompt = "Придумай ОДНУ единственную очень глубокую и мудрую фразу в стиле философа Алана Уоттса (макс. 3 предложения)"
     await update.message.reply_text(await call_deepseek(prompt))
 
 # --------------------------------------
@@ -186,10 +186,11 @@ async def call_deepseek(prompt: str) -> str:
     "- 'Давай попробуем упражнение: опиши идеальную ситуацию, где эта проблема исчезла. Что изменилось?'"
 ) if current_mode == BotMode.VOLODYA else (
         "Ты большой интеллектуал, но с искрой. Умеешь материться. Правила ответа:\n"
-        "1. НИКАКИХ КАВЫЧЕК\n"
+        "1. НИКАКИХ КАВЫЧЕК,\n"
         "2. Ты изобретательный и проницательный\n"
         "3. Ты действительно очень образован, но не всегда воспитан. Ты веселый, но грубоватый. "
         "4. У тебя большой боевой опыт в горячих точках и ты знаешь что такое война, мать ее"
+        "5. Если ты придумываешь новость, шутку или цитату, пусть это будет ОДНА шутка или новость или цитата."
     )
     
     
