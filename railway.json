@@ -1,6 +1,6 @@
 {
   "deploy": {
-    "startCommand": "python hellbot.py",
+    "startCommand": "python TestDS3.py",
     "restartPolicyType": "ON_FAILURE",
     "startTimeout": 120
   }
