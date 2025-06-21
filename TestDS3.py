@@ -9,9 +9,10 @@ from telegram.ext import filters
 #from dotenv import load_dotenv
 import logging
 from collections import defaultdict, deque
+from enum import Enum, auto
 
-# Chat memory: { (chat_id, user_id): deque(maxlen=10) }
-chat_memories = defaultdict(lambda: deque(maxlen=10))
+# Chat memory: { (chat_id, user_id): deque(maxlen=32) }
+chat_memories = defaultdict(lambda: deque(maxlen=32))
 
 # Load tokens
 #load_dotenv()
@@ -36,6 +37,16 @@ DEEPSEEK_HEADERS = {
 # --------------------------------------
 # EXACT FUNCTIONS FROM YOUR LIST (NO MORE, NO LESS)
 # --------------------------------------
+
+async def set_mode(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    global current_mode
+    if context.args and context.args[0].lower() == "volodya":
+        current_mode = BotMode.VOLODYA
+        await update.message.reply_text("🔹 Режим 'Володя': включена эмпатия и поддержка. Сэкономите 5000.")
+    else:
+        current_mode = BotMode.NORMAL
+        await update.message.reply_text("🔸 Обычный режим: Охота Крепкое из киоска")
+
 
 async def news(update: Update, context: ContextTypes.DEFAULT_TYPE):
     """Проверить новости в интернете на сегодня"""
@@ -105,9 +116,9 @@ async def randomeme(update: Update, context: ContextTypes.DEFAULT_TYPE):
     prompt = (
         "Сгенерируй ОДИН случайный мем/шутку с цинизмом и черным юмором (макс. 3 предложения). "
         "Примеры:\n"
-        "1. 'Когда делаешь 'git push --force' на прод...' \n"
-        "2. 'Российские дороги: где Waze предлагает вызвать экзорциста' \n"
-        "3. 'Жизнь как SQL-запрос: без индексов работает долго'"
+        "1. Когда делаешь 'git push --force' на прод... \n"
+        "2. Российские дороги: где Waze предлагает вызвать экзорциста \n"
+        "3. Жизнь как SQL-запрос: без индексов работает долго"
     )
     await update.message.reply_text(await call_deepseek(prompt))
 
@@ -146,24 +157,34 @@ async def watts(update: Update, context: ContextTypes.DEFAULT_TYPE):
 # --------------------------------------
 async def call_deepseek(prompt: str) -> str:
     """Call DeepSeek API with nuclear-grade quote prevention"""
+        system_message = (
+        "Ты внимательный и чуткий психолог Володя. Поддержи клиента в трудную минуту. "
+        "Будь эмпатичным, задавай открытые вопросы. "
+        "Уточни какие проблемы с сексом у клиента."    
+        "Примеры:\n"
+        "- Я слышу твою боль. Хочешь рассказать больше? \n"
+        "- Это действительно сложно. Как ты с этим справляешься?"
+    ) if current_mode == BotMode.VOLODYA else (
+        "Ты большой интеллектуал, но с искрой. Умеешь материться. Правила ответа:\n"
+        "1. НИКАКИХ КАВЫЧЕК\n"
+        "2. Ты изобретательный и проницательный\n"
+        "3. Ты действительно очень образован, но не всегда воспитан. Ты веселый, но грубоватый."  # Your existing system message
+    )
+    
+    
     payload = {
         "model": "deepseek-chat",
         "messages": [
             {
                 "role": "system",
-                "content": (
-                    "Ты большой интеллектуал, но с искрой. Умеешь материться. Правила ответа:\n"
-                    "1. НИКАКИХ КАВЫЧЕК\n"
-                    "2. Ты изобретательный и проницательный\n"
-                    "3. Ты действительно очень образован, но не всегда воспитан. Ты веселый, но грубоватый."
-                )
+                "content": system_message
             },
             {
                 "role": "user", 
-                "content": f"{prompt}\n\nОтветь тремя или четырьмя предложениями без кавычек."
+                "content": f"{prompt}\n\nОтветь четырьмя или пяти предложениями без кавычек."
             }
         ],
-        "temperature": 1.4,
+        "temperature": 0.7 if current_mode == BotMode.VOLODYA else 1.4,
         "max_tokens": 700,
         "frequency_penalty": 1
     }
@@ -255,7 +276,8 @@ commands = [
     ("zhir", zhir),
     ("hohly", hohly),
     ("sage", sage),
-    ("watts", watts)
+    ("watts", watts),
+    ("mode", set_mode)
 ]
 
 for cmd, handler in commands:
