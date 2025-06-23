@@ -410,7 +410,7 @@ async def handle_image(update: Update, context: ContextTypes.DEFAULT_TYPE):
         # Process
         processing_msg = await update.message.reply_text(" Проверяю")
         response = openai_client.chat.completions.create(
-            model="gpt-4-vision-preview",
+            model="gpt-4o-mini",
             messages=[{
                 "role": "user",
                 "content": [
@@ -436,23 +436,27 @@ async def handle_image(update: Update, context: ContextTypes.DEFAULT_TYPE):
         await update.message.reply_text("Чёт не вышло. Попробуй другую картинку.")
 
 async def group_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    # Check for @botname in text/caption
+    # Check for @mention OR reply-to-bot
     bot_username = context.bot.username.lower()
-    mention_exists = (
+    is_reply_to_bot = (
+        update.message.reply_to_message and 
+        update.message.reply_to_message.from_user.id == context.bot.id
+    )
+    has_mention = (
         (update.message.text and f"@{bot_username}" in update.message.text.lower()) or
         (update.message.caption and f"@{bot_username}" in update.message.caption.lower())
     )
     
-    if not mention_exists:
+    if not (has_mention or is_reply_to_bot):
         return
 
+    # Route message
     if update.message.photo:
         await handle_image(update, context)
     elif update.message.document:
         await handle_file(update, context)
     else:
         await handle_mention(update, context)
-
 
 
 # --------------------------------------
