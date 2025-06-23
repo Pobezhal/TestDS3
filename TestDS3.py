@@ -300,12 +300,9 @@ async def handle_reply(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
 
 async def handle_file(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    """Process PDF/DOCX/TXT/CSV files with full error handling"""
-    # Debug: Check /tmp permissions first
-    tmp_permission = os.access('/tmp', os.W_OK)
-    print(f"🛠️ /tmp writeable: {tmp_permission}")
+    """Process PDF/DOCX/TXT/CSV files with fallbacks"""
     print(f"🛠️ Incoming file: {update.message.document.file_name}")
-
+    
     # 1. Validate file type
     ALLOWED_EXTENSIONS = [".pdf", ".docx", ".txt", ".csv"]
     file_ext = os.path.splitext(update.message.document.file_name)[1].lower()
@@ -314,62 +311,52 @@ async def handle_file(update: Update, context: ContextTypes.DEFAULT_TYPE):
         await update.message.reply_text("❌ Только PDF/DOCX/TXT/CSV.")
         return
 
-    # 2. Check file size
-    MAX_SIZE_MB = 5
-    file_size_mb = update.message.document.file_size / (1024 * 1024)
-    
-    if file_size_mb > MAX_SIZE_MB:
-        await update.message.reply_text(f"❌ Слишком большой (макс. {MAX_SIZE_MB}MB).")
-        return
-
-    # 3. Download with progress
+    # 2. Download
     progress_msg = await update.message.reply_text("📥 Качаю файл...")
-    file_path = f"/tmp/{update.message.document.file_name}"
+    file_path = f"/tmp/{int(time.time())}_{update.message.document.file_name}"
     
     try:
-        # Critical fix: Proper await chain
+        # Download with timeout
         telegram_file = await update.message.document.get_file()
         await telegram_file.download_to_drive(custom_path=file_path)
         
-        print(f"🛠️ Saved to: {file_path}")
-        print(f"🛠️ File exists: {os.path.exists(file_path)}")
-        print(f"🛠️ File size: {os.path.getsize(file_path)} bytes")
+        if not os.path.exists(file_path):
+            raise Exception("Файл не сохранился")
 
-        # 4. Parse based on type
+        # 3. Parse content
         text = ""
         if file_ext == ".pdf":
-            import PyPDF2
-            with open(file_path, "rb") as f:
-                reader = PyPDF2.PdfReader(f)
-                text = "\n".join(page.extract_text() for page in reader.pages if page.extract_text())
-                
+            print("🛠️ Using pdfminer.six...")
+            from pdfminer.high_level import extract_text
+            text = extract_text(file_path)
+            
         elif file_ext == ".docx":
             from docx import Document
             doc = Document(file_path)
-            text = "\n".join(para.text for para in doc.paragraphs if para.text)
+            text = "\n".join([para.text for para in doc.paragraphs if para.text])
             
         elif file_ext in (".txt", ".csv"):
             with open(file_path, "r", encoding="utf-8") as f:
                 text = f.read()
 
-        # 5. Generate summary
+        # 4. Validate extraction
         if not text.strip():
-            await progress_msg.edit_text("🤷‍♂️ Файл пустой или битый.")
+            await progress_msg.edit_text("🤷‍♂️ Файл пустой или нечитаемый.")
             return
             
+        # 5. Generate summary
         summary = await call_deepseek(f"Резюме документа (3 предложения):\n{text[:3000]}")
         await progress_msg.edit_text(f"📄 Вывод:\n{summary}")
 
     except Exception as e:
-        logger.error(f"CRASH: {str(e)}", exc_info=True)
-        await progress_msg.edit_text("💥 Ошибка при обработке. Попробуй другой файл.")
+        logger.error(f"FILE ERROR: {str(e)}", exc_info=True)
+        await progress_msg.edit_text("💥 Ошибка. Попробуй другой формат (DOCX/TXT).")
         
     finally:
-        # 6. Cleanup
+        # Cleanup
         if os.path.exists(file_path):
             os.remove(file_path)
-            print("🛠️ Temp file cleaned up")
-
+            
 app.add_handler(MessageHandler(
     filters.TEXT &
     filters.REPLY &
