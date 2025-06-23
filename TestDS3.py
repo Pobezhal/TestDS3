@@ -1,5 +1,5 @@
 #not a malicious thing, just a bot to make fun of my close friends!!
-
+import time
 from telegram.ext import Application, CommandHandler, MessageHandler, filters, ContextTypes
 from telegram import Update
 import requests
