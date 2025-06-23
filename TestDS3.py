@@ -314,65 +314,64 @@ async def handle_reply(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
 
 async def handle_file(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    """Process PDF/DOCX/TXT/CSV files with fallbacks"""
-    
-    # Check if it's actually a document (not a photo)
+    """Process ONLY PDF/DOCX/TXT/CSV files (strictly ignores images)"""
+    # 1. Early exit for non-documents or images
     if not update.message.document:
-        return  # Let other handlers process non-document messages
-        
-    print(f"🛠️ Incoming file: {update.message.document.file_name}")
-    
-    # 1. Validate file type
+        return  # Let other handlers process it
+
+    if update.message.photo:
+        return  # handle_image() will catch this
+
+    # 2. Validate file type
     ALLOWED_EXTENSIONS = [".pdf", ".docx", ".txt", ".csv"]
-    file_ext = os.path.splitext(update.message.document.file_name)[1].lower()
-    
+    try:
+        file_ext = os.path.splitext(update.message.document.file_name)[1].lower()
+    except AttributeError:
+        await update.message.reply_text("❌ Не могу определить тип файла.")
+        return
+
     if file_ext not in ALLOWED_EXTENSIONS:
         await update.message.reply_text("❌ Только PDF/DOCX/TXT/CSV.")
         return
 
-    # 2. Download
-    progress_msg = await update.message.reply_text("Файл грузится")
+    # 3. Download and process
+    progress_msg = await update.message.reply_text("📥 Загружаю файл...")
     file_path = f"/tmp/{int(time.time())}_{update.message.document.file_name}"
     
     try:
-        # Download with timeout
+        # Download file
         telegram_file = await update.message.document.get_file()
         await telegram_file.download_to_drive(custom_path=file_path)
         
         if not os.path.exists(file_path):
-            raise Exception("Файл не сохранился")
+            await progress_msg.edit_text("💥 Файл не сохранился на сервере.")
+            return
 
-        # 3. Parse content
+        # Parse content
         text = ""
         if file_ext == ".pdf":
-            print("🛠️ Using pdfminer.six...")
             from pdfminer.high_level import extract_text
             text = extract_text(file_path)
-            
         elif file_ext == ".docx":
             from docx import Document
             doc = Document(file_path)
-            text = "\n".join([para.text for para in doc.paragraphs if para.text])
-            
+            text = "\n".join(p.text for p in doc.paragraphs if p.text)
         elif file_ext in (".txt", ".csv"):
             with open(file_path, "r", encoding="utf-8") as f:
-                text = f.read()
+                text = f.read(3000)  # Limit read for large files
 
-        # 4. Validate extraction
         if not text.strip():
             await progress_msg.edit_text("🤷‍♂️ Файл пустой или нечитаемый.")
             return
             
-        # 5. Generate summary
-        summary = await call_deepseek(f"Резюме документа (3 предложения):\n{text[:3000]}")
-        await progress_msg.edit_text(f"📄 Вывод:\n{summary}")
+        summary = await call_deepseek(f"Резюме документа (3 предложения):\n{text}")
+        await progress_msg.edit_text(f"📄 Вывод:\n{summary[:1000]}")  # Truncate long output
 
     except Exception as e:
         logger.error(f"FILE ERROR: {str(e)}", exc_info=True)
-        await progress_msg.edit_text(" Ошибка. Попробуй другой формат (DOCX/TXT).")
+        await progress_msg.edit_text("💥 Ошибка обработки. Попробуй другой файл.")
         
     finally:
-        # Cleanup
         if os.path.exists(file_path):
             os.remove(file_path)
 
@@ -380,7 +379,8 @@ async def handle_file(update: Update, context: ContextTypes.DEFAULT_TYPE):
 async def handle_image(update: Update, context: ContextTypes.DEFAULT_TYPE):
     """Handle images with custom user prompts"""
     if not update.message.photo:
-        return  # Let other handlers process non-photo messages
+        await update.message.reply_text("Это не изображение.")
+        return
     
     try:
         # Get image
@@ -405,7 +405,7 @@ async def handle_image(update: Update, context: ContextTypes.DEFAULT_TYPE):
         # Process
         processing_msg = await update.message.reply_text(" Проверяю")
         response = openai_client.chat.completions.create(
-            model="gpt-4o-mini",  # Updated to current model
+            model="gpt-4-vision-preview",
             messages=[{
                 "role": "user",
                 "content": [
@@ -428,8 +428,7 @@ async def handle_image(update: Update, context: ContextTypes.DEFAULT_TYPE):
         
     except Exception as e:
         logger.error(f"Image error: {e}")
-        await update.message.reply_text("Не сработало. Попробуй другую картинку.")
-
+        await update.message.reply_text("Чёт не вышло. Попробуй другую картинку.")
 
 async def group_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
     # Check for @botname in text/caption
@@ -448,6 +447,7 @@ async def group_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
         await handle_file(update, context)
     else:
         await handle_mention(update, context)
+
 
 
 # --------------------------------------
@@ -472,17 +472,23 @@ commands = [
 for cmd, handler in commands:
     app.add_handler(CommandHandler(cmd, handler))
 
-app.add_handler(MessageHandler(filters.ChatType.PRIVATE & filters.PHOTO, handle_image))
-app.add_handler(MessageHandler(filters.ChatType.PRIVATE & filters.Document.ALL, handle_file))
-app.add_handler(MessageHandler(filters.ChatType.PRIVATE & filters.TEXT, handle_mention))
-
-# Group chat handlers - only when mentioned with @botname
+# ===== 1. PRIVATE CHAT HANDLER (keep) =====
 app.add_handler(MessageHandler(
-    filters.ChatType.GROUPS & (filters.TEXT | filters.PHOTO | filters.Document.ALL),
-    group_handler  # This function should check for @mention then route to appropriate handler
+    filters.ChatType.PRIVATE & (filters.TEXT | filters.PHOTO | filters.Document.ALL),
+    lambda update, ctx: (
+        handle_image(update, ctx) if update.message.photo else
+        handle_file(update, ctx) if update.message.document else
+        handle_mention(update, ctx)
+    )
 ))
 
-# Reply handler - works in both private and group chats when someone replies to bot
+# ===== 2. GROUP CHAT HANDLER (REPLACE with this) =====
+app.add_handler(MessageHandler(
+    filters.ChatType.GROUPS & (filters.TEXT | filters.PHOTO | filters.Document.ALL),
+    group_handler  # Your custom function that checks @mentions
+))
+
+# ===== 3. REPLY HANDLER (keep one) =====
 app.add_handler(MessageHandler(
     filters.TEXT & filters.REPLY,
     handle_reply
