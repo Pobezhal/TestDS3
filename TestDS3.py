@@ -408,7 +408,7 @@ async def handle_image(update: Update, context: ContextTypes.DEFAULT_TYPE):
         
         # API Request
         response = openai_client.chat.completions.create(
-            model="gpt-4-vision-preview",  # Changed from "gpt-4o-mini" to the correct model name
+            model="gpt-4o-mini", 
             messages=[
                 {
                     "role": "user",
