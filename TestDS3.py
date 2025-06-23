@@ -300,61 +300,112 @@ async def handle_reply(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
 
 async def handle_file(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    """Handle all file processing with proper error handling and logging"""
+    print("🛠️ FILE HANDLER TRIGGERED")  # Debug 1
+    
+    # 1. Get file metadata safely
+    try:
+        file = update.message.document
+        if not file:
+            await update.message.reply_text("❌ Это не файл или повреждено.")
+            return
+
+        file_name = file.file_name
+        file_ext = os.path.splitext(file_name)[1].lower() if file_name else ""
+        file_size_mb = file.file_size / (1024 * 1024) if file.file_size else 0
+        
+        print(f"🛠️ Processing {file_name} ({file_size_mb:.1f}MB)")  # Debug 2
+
+    except Exception as meta_error:
+        logger.error(f"Metadata error: {meta_error}")
+        await update.message.reply_text("💥 Не могу прочитать файл.")
+        return
+
+    # 2. Validate file
     ALLOWED_EXTENSIONS = [".pdf", ".docx", ".txt", ".csv"]
-    MAX_SIZE_MB = 5  # Adjust based on your RAM limits
+    MAX_SIZE_MB = 5
     
-    file = update.message.document
-    file_ext = os.path.splitext(file.file_name)[1].lower()
-    
-    # 1. Validate file type
+    if not file_ext:
+        await update.message.reply_text("❌ Файл без расширения.")
+        return
+        
     if file_ext not in ALLOWED_EXTENSIONS:
-        await update.message.reply_text("❌ Только PDF, DOCX, TXT или CSV.")
+        await update.message.reply_text("❌ Только PDF/DOCX/TXT/CSV.")
         return
-    
-    # 2. Validate file size
-    file_size_mb = file.file_size / (1024 * 1024)
+        
     if file_size_mb > MAX_SIZE_MB:
-        await update.message.reply_text(f"❌ Файл слишком большой (макс. {MAX_SIZE_MB}MB).")
+        await update.message.reply_text(f"❌ Слишком большой (макс. {MAX_SIZE_MB}MB).")
         return
-    
-    # 3. Download with progress
+
+    # 3. Download file
     progress_msg = await update.message.reply_text("📥 Качаю файл...")
-    file_path = await file.get_file().download_to_drive()
+    file_path = f"/tmp/{file_name}"
     
     try:
+        # Force download with explicit path
+        await file.get_file().download_to_drive(custom_path=file_path)
+        print(f"🛠️ Downloaded to {file_path}")  # Debug 3
+        
+        if not os.path.exists(file_path):
+            raise FileNotFoundError("Download failed")
+
+    except Exception as download_error:
+        logger.error(f"Download failed: {download_error}")
+        await progress_msg.edit_text("💥 Не скачалось. Попробуй ещё раз.")
+        return
+
+    # 4. Parse file content
+    try:
         text = ""
-        # 4. PARSE THE FILE BASED ON TYPE
+        
+        # PDF Parsing
         if file_ext == ".pdf":
+            print("🛠️ Parsing PDF...")  # Debug 4
             import PyPDF2
             with open(file_path, "rb") as f:
                 reader = PyPDF2.PdfReader(f)
-                text = "\n".join([page.extract_text() for page in reader.pages if page.extract_text()])
+                text = "\n".join(
+                    page.extract_text() 
+                    for page in reader.pages 
+                    if page.extract_text()
+                )
         
+        # Word Parsing
         elif file_ext == ".docx":
+            print("🛠️ Parsing DOCX...")  # Debug 5
             from docx import Document
             doc = Document(file_path)
-            text = "\n".join([para.text for para in doc.paragraphs if para.text])
+            text = "\n".join(
+                para.text 
+                for para in doc.paragraphs 
+                if para.text
+            )
         
+        # Text/CSV Parsing
         elif file_ext in (".txt", ".csv"):
+            print("🛠️ Parsing text...")  # Debug 6
             with open(file_path, "r", encoding="utf-8") as f:
                 text = f.read()
         
-        # 5. Summarize with DeepSeek
+        print(f"🛠️ Extracted text length: {len(text)} chars")  # Debug 7
+        
+        # 5. Generate summary
         if not text.strip():
-            await progress_msg.edit_text("🤷‍♂️ Файл пуст или нечитаем.")
+            await progress_msg.edit_text("🤷‍♂️ Файл пустой или битый.")
             return
             
-        summary = await call_deepseek(f"Кратко резюмируй документ (3 предложения):\n{text[:3000]}")
+        summary = await call_deepseek(f"Резюме документа (3 предложения):\n{text[:3000]}")
         await progress_msg.edit_text(f"📄 Вывод:\n{summary}")
-    
-    except Exception as e:
-        logger.error(f"File error: {e}")
-        await progress_msg.edit_text("💥 Ошибка. Не то чтобы я не смог, но... попробуй другой файл.")
-    
-    finally:
-        if os.path.exists(file_path):
-            os.remove(file_path)  
 
+    except Exception as parse_error:
+        logger.error(f"Parsing crashed: {parse_error}", exc_info=True)
+        await progress_msg.edit_text("💥 Не смог разобрать файл. Кидай текстом.")
+
+    finally:
+        # 6. Cleanup
+        if os.path.exists(file_path):
+            os.remove(file_path)
+            print("🛠️ Temp file deleted")
 
 app.add_handler(MessageHandler(
     filters.TEXT &
@@ -385,16 +436,26 @@ commands = [
 for cmd, handler in commands:
     app.add_handler(CommandHandler(cmd, handler))
 
+# 1. Text handler (mentions in groups, all messages in private)
 app.add_handler(MessageHandler(
     (filters.TEXT & filters.ChatType.GROUPS & filters.Entity("mention")) |
-    (filters.TEXT & filters.ChatType.PRIVATE),  # Add private chats
+    (filters.TEXT & filters.ChatType.PRIVATE),
     handle_mention
 ))
 
+# 2. File handler (PDF/DOCX/TXT/CSV in both chats)
 app.add_handler(MessageHandler(
     filters.Document.ALL & 
-    (filters.ChatType.PRIVATE | filters.ChatType.GROUPS),
+    (filters.ChatType.PRIVATE | filters.ChatType.GROUPS) &
+    ~filters.COMMAND,  # Prevents conflict with /commands
     handle_file
+))
+
+# 3. Reply handler (for threaded responses)
+app.add_handler(MessageHandler(
+    filters.TEXT & filters.REPLY & 
+    (filters.ChatType.PRIVATE | filters.ChatType.GROUPS),
+    handle_reply
 ))
 
 if __name__ == "__main__":
