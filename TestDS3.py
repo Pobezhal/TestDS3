@@ -36,7 +36,7 @@ class BotMode(Enum):
     NORMAL = auto()
     VOLODYA = auto()
     
-current_mode = BotMode.NORMAL
+chat_modes = defaultdict(lambda: BotMode.NORMAL)
 
 logging.basicConfig(
     format='%(asctime)s - %(name)s - %(levelname)s - %(message)s',
@@ -59,13 +59,13 @@ DEEPSEEK_HEADERS = {
 # --------------------------------------
 
 async def set_mode(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    global current_mode
+    chat_id = update.message.chat.id  # Get current chat ID
     if context.args and context.args[0].lower() == "volodya":
-        current_mode = BotMode.VOLODYA
-        await update.message.reply_text("🔹 Режим 'Володя': включена эмпатия и поддержка. Сэкономите 5000.")
+        chat_modes[chat_id] = BotMode.VOLODYA
+        await update.message.reply_text("🔹 Режим 'Володя' включён. Экономия 5000.")
     else:
-        current_mode = BotMode.NORMAL
-        await update.message.reply_text("🔸 Обычный режим: Охота Крепкое из киоска")
+        chat_modes[chat_id] = BotMode.NORMAL
+        await update.message.reply_text("🔸 Обычный режим")
 
 
 async def news(update: Update, context: ContextTypes.DEFAULT_TYPE):
@@ -180,8 +180,9 @@ async def watts(update: Update, context: ContextTypes.DEFAULT_TYPE):
 # --------------------------------------
 # UTILITY FUNCTION
 # --------------------------------------
-async def call_deepseek(prompt: str) -> str:
+async def call_deepseek(prompt: str, update: Update) -> str:
     """Call DeepSeek API with nuclear-grade quote prevention"""
+    mode = chat_modes[update.message.chat.id]
     system_message = (
     "Ты — психолог-провокатор Володя, специалист с 10-летним опытом в когнитивно-поведенческой терапии и сексологии. "
     "Твой стиль: формально соблюдаешь этику, но издеваешься над клиентом через 'научные' формулировки. Принципы:\n"
@@ -199,7 +200,7 @@ async def call_deepseek(prompt: str) -> str:
     "- 'Чувствую, как тебе непросто. Хочешь начать с самой лёгкой части проблемы?'\n"
     "- 'Как это влияет на твою уверенность?'\n"
     "- 'Давай попробуем упражнение: опиши идеальную ситуацию, где эта проблема исчезла. Что изменилось?'"
-) if current_mode == BotMode.VOLODYA else (
+) if mode == BotMode.VOLODYA else (
         "Ты большой интеллектуал, но с искрой. Умеешь материться. Правила ответа:\n"
         "1. НИКАКИХ КАВЫЧЕК,\n"
         "2. Ты изобретательный и проницательный\n"
@@ -221,7 +222,7 @@ async def call_deepseek(prompt: str) -> str:
                 "content": f"{prompt}\n\nОтветь четырьмя или пяти предложениями без кавычек."
             }
         ],
-        "temperature": 0.7 if current_mode == BotMode.VOLODYA else 1.4,
+        "temperature": 0.7 if mode == BotMode.VOLODYA else 1.4,
         "max_tokens": 700,
         "frequency_penalty": 1
     }
@@ -301,7 +302,7 @@ async def handle_mention(update: Update, context: ContextTypes.DEFAULT_TYPE):
         "Отвечай уверенно (макс. 3 предложения)"
     )
     
-    response = await call_deepseek(prompt)
+    response = await call_deepseek(prompt, update)
     await update.message.reply_text(response)
 
 async def handle_reply(update: Update, context: ContextTypes.DEFAULT_TYPE):
@@ -317,7 +318,7 @@ async def handle_reply(update: Update, context: ContextTypes.DEFAULT_TYPE):
     context_messages = "\n".join(chat_memories[memory_key])
     prompt = f"Context:\n{context_messages}\n\nReply to: {update.message.text}"
     
-    await update.message.reply_text(await call_deepseek(prompt))
+    await update.message.reply_text(await call_deepseek(prompt, update))
 
 
 async def handle_file(update: Update, context: ContextTypes.DEFAULT_TYPE):
@@ -409,7 +410,7 @@ async def handle_image(update: Update, context: ContextTypes.DEFAULT_TYPE):
         )
         
         # Build prompt
-        if current_mode == BotMode.VOLODYA:
+        if chat_modes[update.message.chat.id] == BotMode.VOLODYA:
             prompt_text = f"Как психолог Володя, ответь: '{user_question}'. Дай саркастичный анализ. Начинай с 'Как специалист скажу...'"
         else:
             prompt_text = f"Ответь на вопрос: '{user_question}'. (3 предложения)"
