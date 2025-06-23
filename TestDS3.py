@@ -17,11 +17,9 @@ from openai import OpenAI
 
 import sys
 
-print("DEBUG: OPENAI_API_KEY =", os.environ.get("MY_OPENAI_KEY"), file=sys.stderr)
 
 
 
-# Chat memory: { (chat_id, user_id): deque(maxlen=32) }
 chat_memories = defaultdict(lambda: deque(maxlen=32))
 
 # Load tokens
@@ -29,8 +27,6 @@ chat_memories = defaultdict(lambda: deque(maxlen=32))
 
 
 
-#openai_client = OpenAI(api_key=os.getenv("OPENAI_API_KEY"))
-#openai_client = OpenAI(api_key=os.environ.get("OPENAI_API_KEY"))
 print("OPENAI_KEY_EXISTS:", "OPENAI_API_KEY" in os.environ)  # Debug line
 openai_client = OpenAI(api_key=os.getenv("OPENAI_API_KEY"))
 
@@ -404,7 +400,7 @@ async def handle_image(update: Update, context: ContextTypes.DEFAULT_TYPE):
                          "Опиши что видишь и дай саркастичный психологический анализ (3 предложения). "
                          "Начинай с 'Как специалист скажу...'")
         else:
-            prompt_text = "Опиши это изображение в очень смешной и саркастичной манере (3 предложения, можно с матом)"
+            prompt_text = "Опиши это изображение в очень саркастичной манере c матом и провокацией (3 предложения)"
         
         # API Request
         response = openai_client.chat.completions.create(
@@ -417,7 +413,8 @@ async def handle_image(update: Update, context: ContextTypes.DEFAULT_TYPE):
                         {
                             "type": "image_url",
                             "image_url": {
-                                "url": f"data:image/jpeg;base64,{base64_image}"
+                                "url": f"data:image/jpeg;base64,{base64_image}",
+                                 "detail": "low"
                             }
                         }
                     ]
