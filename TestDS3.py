@@ -17,7 +17,7 @@ from openai import OpenAI
 
 import sys
 
-print("DEBUG: OPENAI_API_KEY =", os.environ.get("OPENAI_API_KEY"), file=sys.stderr)
+print("DEBUG: OPENAI_API_KEY =", os.environ.get("MY_OPENAI_KEY"), file=sys.stderr)
 
 # Chat memory: { (chat_id, user_id): deque(maxlen=32) }
 chat_memories = defaultdict(lambda: deque(maxlen=32))
@@ -28,7 +28,7 @@ chat_memories = defaultdict(lambda: deque(maxlen=32))
 
 
 #openai_client = OpenAI(api_key=os.getenv("OPENAI_API_KEY"))
-openai_client = OpenAI(api_key=os.environ.get("OPENAI_API_KEY"))
+openai_client = OpenAI(api_key=os.environ.get("MY_OPENAI_KEY"))
 
 
 
