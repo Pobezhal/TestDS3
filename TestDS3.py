@@ -326,7 +326,7 @@ async def handle_file(update: Update, context: ContextTypes.DEFAULT_TYPE):
         return
 
     # 2. Download
-    progress_msg = await update.message.reply_text("📥 Качаю файл...")
+    progress_msg = await update.message.reply_text("Файл грузится")
     file_path = f"/tmp/{int(time.time())}_{update.message.document.file_name}"
     
     try:
@@ -376,7 +376,7 @@ async def handle_image(update: Update, context: ContextTypes.DEFAULT_TYPE):
     """Handle incoming images and analyze them with GPT-4 Vision"""
     # Check if we have an image
     if not update.message.photo:
-        await update.message.reply_text("Это не изображение, дебик.")
+        await update.message.reply_text("Это не изображение.")
         return
     
     try:
@@ -392,7 +392,7 @@ async def handle_image(update: Update, context: ContextTypes.DEFAULT_TYPE):
         base64_image = base64.b64encode(photo_bytes.read()).decode('utf-8')
         
         # Show processing message
-        processing_msg = await update.message.reply_text("🔍 Анализирую картинку...")
+        processing_msg = await update.message.reply_text("Проверяю")
         
         # Prepare prompt based on mode
         if current_mode == BotMode.VOLODYA:
@@ -432,20 +432,8 @@ async def handle_image(update: Update, context: ContextTypes.DEFAULT_TYPE):
         
     except Exception as e:
         logger.error(f"Image processing error: {e}")
-        await update.message.reply_text("Чёт не вышло, картинка кривая. Попробуй другую.")
+        await update.message.reply_text("Картинка кривая. Попробуй другую.")
             
-app.add_handler(MessageHandler(
-    filters.TEXT &
-    filters.REPLY &
-    (filters.ChatType.GROUPS | filters.ChatType.PRIVATE),
-    handle_reply
-))
-
-app.add_handler(MessageHandler(
-    filters.PHOTO & 
-    (filters.ChatType.PRIVATE | filters.ChatType.GROUPS),
-    handle_image
-))
 
 # --------------------------------------
 # REGISTER ALL COMMANDS
@@ -469,27 +457,29 @@ commands = [
 for cmd, handler in commands:
     app.add_handler(CommandHandler(cmd, handler))
 
-# 1. Text handler (mentions in groups, all messages in private)
+async def smart_router(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    if update.message.photo:
+        await handle_image(update, context)
+    elif update.message.document:
+        await handle_file(update, context)
+    else:
+        await handle_mention(update, context)
+
 app.add_handler(MessageHandler(
-    (filters.TEXT & filters.ChatType.GROUPS & filters.Entity("mention")) |
-    (filters.TEXT & filters.ChatType.PRIVATE),
-    handle_mention
+    (filters.TEXT | filters.PHOTO | filters.Document.ALL) &  # All message types
+    (
+        filters.ChatType.PRIVATE |  # Always allow in private
+        (filters.ChatType.GROUPS & filters.Entity("mention"))  # Require @mention in groups
+    ),
+    smart_router
 ))
 
-# 2. File handler (PDF/DOCX/TXT/CSV in both chats)
+# ===== 3. REPLY HANDLER (works without @mention) ===== 
 app.add_handler(MessageHandler(
-    filters.Document.ALL & 
-    (filters.ChatType.PRIVATE | filters.ChatType.GROUPS) &
-    ~filters.COMMAND,  # Prevents conflict with /commands
-    handle_file
-))
-
-# 3. Reply handler (for threaded responses)
-app.add_handler(MessageHandler(
-    filters.TEXT & filters.REPLY & 
-    (filters.ChatType.PRIVATE | filters.ChatType.GROUPS),
+    filters.TEXT & filters.REPLY,
     handle_reply
 ))
+
 
 if __name__ == "__main__":
     print("⚡ Helper запущен с точным набором функций")
