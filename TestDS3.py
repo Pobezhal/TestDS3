@@ -427,6 +427,26 @@ async def handle_image(update: Update, context: ContextTypes.DEFAULT_TYPE):
         logger.error(f"Image error: {e}")
         await update.message.reply_text("Чёт не вышло. Попробуй другую картинку.")
 
+async def group_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    # Check for @botname in text/caption
+    bot_username = context.bot.username.lower()
+    mention_exists = (
+        (update.message.text and f"@{bot_username}" in update.message.text.lower()) or
+        (update.message.caption and f"@{bot_username}" in update.message.caption.lower())
+    )
+    
+    if not mention_exists:
+        return
+
+    if update.message.photo:
+        await handle_image(update, context)
+    elif update.message.document:
+        await handle_file(update, context)
+    else:
+        await handle_mention(update, context)
+
+
+
 # --------------------------------------
 # REGISTER ALL COMMANDS
 # --------------------------------------
@@ -449,7 +469,7 @@ commands = [
 for cmd, handler in commands:
     app.add_handler(CommandHandler(cmd, handler))
 
-# ===== 1. PRIVATE CHAT HANDLER =====
+# ===== 1. PRIVATE CHAT HANDLER (keep) =====
 app.add_handler(MessageHandler(
     filters.ChatType.PRIVATE & (filters.TEXT | filters.PHOTO | filters.Document.ALL),
     lambda update, ctx: (
@@ -457,24 +477,19 @@ app.add_handler(MessageHandler(
         handle_file(update, ctx) if update.message.document else
         handle_mention(update, ctx)
     )
-))  # This was missing
+))
 
-# ===== 2. GROUP CHAT HANDLER =====
+# ===== 2. GROUP CHAT HANDLER (REPLACE with this) =====
 app.add_handler(MessageHandler(
-    filters.ChatType.GROUPS & filters.Entity("mention") & (filters.TEXT | filters.PHOTO | filters.Document.ALL),
-    lambda update, ctx: (
-        handle_image(update, ctx) if update.message.photo else
-        handle_file(update, ctx) if update.message.document else
-        handle_mention(update, ctx)
-    )
-))  # Properly closed
+    filters.ChatType.GROUPS & (filters.TEXT | filters.PHOTO | filters.Document.ALL),
+    group_handler  # Your custom function that checks @mentions
+))
 
-# ===== 3. REPLY HANDLER =====
+# ===== 3. REPLY HANDLER (keep one) =====
 app.add_handler(MessageHandler(
     filters.TEXT & filters.REPLY,
     handle_reply
 ))
-
 
 if __name__ == "__main__":
     print("⚡ Helper запущен с точным набором функций")
