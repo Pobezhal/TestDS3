@@ -21,7 +21,13 @@ chat_memories = defaultdict(lambda: deque(maxlen=32))
 # Load tokens
 #load_dotenv()
 
+print("ACTUAL ENV VARS:", dict(os.environ))
+
+print("DEBUG - OPENAI_API_KEY exists:", os.getenv("OPENAI_API_KEY") is not None)
 openai_client = OpenAI(api_key=os.getenv("OPENAI_API_KEY"))
+if not os.getenv("OPENAI_API_KEY"):
+    print("⚠️ OPENAI_API_KEY not set! Image features will fail.")
+
 
 class BotMode(Enum):
     NORMAL = auto()
