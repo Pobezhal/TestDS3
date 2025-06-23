@@ -436,7 +436,7 @@ async def handle_image(update: Update, context: ContextTypes.DEFAULT_TYPE):
         await update.message.reply_text("Чёт не вышло. Попробуй другую картинку.")
 
 async def group_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    # Check for @mention OR reply-to-bot
+    # Check for either @mention OR reply-to-bot
     bot_username = context.bot.username.lower()
     is_reply_to_bot = (
         update.message.reply_to_message and 
@@ -447,16 +447,16 @@ async def group_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
         (update.message.caption and f"@{bot_username}" in update.message.caption.lower())
     )
     
-    if not (has_mention or is_reply_to_bot):
-        return
+    if not (is_reply_to_bot or has_mention):
+        return  # Ignore normal group messages
 
-    # Route message
+    # Route to appropriate handler
     if update.message.photo:
         await handle_image(update, context)
     elif update.message.document:
         await handle_file(update, context)
     else:
-        await handle_mention(update, context)
+        await handle_mention(update, context)  
 
 
 # --------------------------------------
