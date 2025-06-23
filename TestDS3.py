@@ -315,13 +315,18 @@ async def handle_reply(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
 async def handle_file(update: Update, context: ContextTypes.DEFAULT_TYPE):
     """Process PDF/DOCX/TXT/CSV files with fallbacks"""
+    
+    # Check if it's actually a document (not a photo)
+    if not update.message.document:
+        return  # Let other handlers process non-document messages
+        
     print(f"🛠️ Incoming file: {update.message.document.file_name}")
     
     # 1. Validate file type
     ALLOWED_EXTENSIONS = [".pdf", ".docx", ".txt", ".csv"]
     file_ext = os.path.splitext(update.message.document.file_name)[1].lower()
     
-    if file_ext not in ALLOWED_EXTENSIONS update.message.photo:
+    if file_ext not in ALLOWED_EXTENSIONS:
         await update.message.reply_text("❌ Только PDF/DOCX/TXT/CSV.")
         return
 
@@ -364,7 +369,7 @@ async def handle_file(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
     except Exception as e:
         logger.error(f"FILE ERROR: {str(e)}", exc_info=True)
-        await progress_msg.edit_text("💥 Ошибка. Попробуй другой формат (DOCX/TXT).")
+        await progress_msg.edit_text(" Ошибка. Попробуй другой формат (DOCX/TXT).")
         
     finally:
         # Cleanup
@@ -372,12 +377,10 @@ async def handle_file(update: Update, context: ContextTypes.DEFAULT_TYPE):
             os.remove(file_path)
 
 
-
 async def handle_image(update: Update, context: ContextTypes.DEFAULT_TYPE):
     """Handle images with custom user prompts"""
     if not update.message.photo:
-        await update.message.reply_text("Это не изображение.")
-        return
+        return  # Let other handlers process non-photo messages
     
     try:
         # Get image
@@ -402,7 +405,7 @@ async def handle_image(update: Update, context: ContextTypes.DEFAULT_TYPE):
         # Process
         processing_msg = await update.message.reply_text(" Проверяю")
         response = openai_client.chat.completions.create(
-            model="gpt-4-vision-preview",
+            model="gpt-4o-mini",  # Updated to current model
             messages=[{
                 "role": "user",
                 "content": [
@@ -425,25 +428,7 @@ async def handle_image(update: Update, context: ContextTypes.DEFAULT_TYPE):
         
     except Exception as e:
         logger.error(f"Image error: {e}")
-        await update.message.reply_text("Чёт не вышло. Попробуй другую картинку.")
-
-async def group_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    # Check for @botname in text/caption
-    bot_username = context.bot.username.lower()
-    mention_exists = (
-        (update.message.text and f"@{bot_username}" in update.message.text.lower()) or
-        (update.message.caption and f"@{bot_username}" in update.message.caption.lower())
-    )
-    
-    if not mention_exists:
-        return
-
-    if update.message.photo:
-        await handle_image(update, context)
-    elif update.message.document:
-        await handle_file(update, context)
-    else:
-        await handle_mention(update, context)
+        await update.message.reply_text("Не сработало. Попробуй другую картинку.")
 
 
 
