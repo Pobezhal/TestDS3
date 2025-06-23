@@ -79,13 +79,13 @@ async def news(update: Update, context: ContextTypes.DEFAULT_TYPE):
         "- 'Путин объявил о новых соцвыплатах, но если верить статистике, получат их только его друзья-олигархи.'\n"
         "- 'Медведев пообещал развалить экономику ещё сильнее, и надо признать - он выдающийся специалист в этом деле.'"
     )
-    response = await call_deepseek(prompt)
+    response = await call_deepseek(prompt, update)
     await update.message.reply_text(response[:700])
 
 async def wtf(update: Update, context: ContextTypes.DEFAULT_TYPE):
     """Пояснить за жизнь"""
     prompt = "Объясни смысл жизни очень цинично c использованием грязных выражений и мата (макс. 4 предложения)"
-    await update.message.reply_text(await call_deepseek(prompt))
+    await update.message.reply_text(await call_deepseek(prompt, update))
 
 
 async def problem(update: Update, context: ContextTypes.DEFAULT_TYPE):
@@ -107,7 +107,7 @@ async def problem(update: Update, context: ContextTypes.DEFAULT_TYPE):
     )
 
     try:
-        advice = await call_deepseek(prompt)
+        advice = await call_deepseek(prompt, update)
         # Fallback if API fails
         if "не фурычит" in advice.lower():
             advice = f"По проблеме '{user_problem}': возьми и передумай 🤷‍♂️"
@@ -127,7 +127,7 @@ async def fugoff(update: Update, context: ContextTypes.DEFAULT_TYPE):
         "2 'иди нахуй, как бабка на авито продает!' \n"
         "3. 'ты как обновление Windows - только проблемы несешь!'"
     )
-    insult = await call_deepseek(prompt)
+    insult = await call_deepseek(prompt, update)
     await update.message.reply_text(f"{target}, {insult} 🖕")
 
 
@@ -140,42 +140,42 @@ async def randomeme(update: Update, context: ContextTypes.DEFAULT_TYPE):
         "2. Российские дороги: где Waze предлагает вызвать экзорциста \n"
         "3. Жизнь как SQL-запрос: без индексов работает долго"
     )
-    await update.message.reply_text(await call_deepseek(prompt))
+    await update.message.reply_text(await call_deepseek(prompt, update))
 
 async def sych(update: Update, context: ContextTypes.DEFAULT_TYPE):
     """Оправдание одиночества"""
     prompt = "Объясни почему тян не нужны, а быть одиноким сычем - классно (3 предложения, цинично)"
-    await update.message.reply_text(await call_deepseek(prompt))
+    await update.message.reply_text(await call_deepseek(prompt, update))
 
 async def petros(update: Update, context: ContextTypes.DEFAULT_TYPE):
     """Оправдание одиночества"""
     prompt = "Придумай одну единственную шутку в стиле Евгения Петросяна (макс. 3 предложения, глупо и смешно)"
-    await update.message.reply_text(await call_deepseek(prompt))
+    await update.message.reply_text(await call_deepseek(prompt, update))
 
 async def putin(update: Update, context: ContextTypes.DEFAULT_TYPE):
     """Цитата Путина"""
     prompt = "Придумай ОДНУ единственную фразу в стиле Владимира Путина (макс. 2 предложения, смело и патриотично)"
-    await update.message.reply_text(await call_deepseek(prompt))
+    await update.message.reply_text(await call_deepseek(prompt, update))
 
 async def zhir(update: Update, context: ContextTypes.DEFAULT_TYPE):
     """Цитата Жириновского"""
     prompt = "Придумай ОДНУ единственную резкую фразу в стиле Владимира Жириновского (макс. 2 предложения, очень провокационно)"
-    await update.message.reply_text(await call_deepseek(prompt))
+    await update.message.reply_text(await call_deepseek(prompt, update))
 
 async def hohly(update: Update, context: ContextTypes.DEFAULT_TYPE):
     """Новости про Украину"""
     prompt = "Кратко и цинично объясни 'че там у хохлов' (3 предложения)"
-    await update.message.reply_text(await call_deepseek(prompt))
+    await update.message.reply_text(await call_deepseek(prompt, update))
 
 async def sage(update: Update, context: ContextTypes.DEFAULT_TYPE):
     """Восточная мудрость"""
     prompt = "Придумай ОДНУ единственную очень мудрую и глубокую по смыслу фразу в стиле восточной мудрости (макс. 3 предложения)"
-    await update.message.reply_text(await call_deepseek(prompt))
+    await update.message.reply_text(await call_deepseek(prompt, update))
     
 async def watts(update: Update, context: ContextTypes.DEFAULT_TYPE):
     """Цитата Уоттса"""
     prompt = "Придумай ОДНУ единственную очень глубокую и мудрую фразу в стиле философа Алана Уоттса (макс. 3 предложения)"
-    await update.message.reply_text(await call_deepseek(prompt))
+    await update.message.reply_text(await call_deepseek(prompt, update))
 
 # --------------------------------------
 # UTILITY FUNCTION
@@ -377,7 +377,7 @@ async def handle_file(update: Update, context: ContextTypes.DEFAULT_TYPE):
             await progress_msg.edit_text("🤷‍♂️ Файл пустой или нечитаемый.")
             return
             
-        summary = await call_deepseek(f"Резюме документа (3 предложения):\n{text}")
+        summary = await call_deepseek(f"Резюме документа (3 предложения):\n{text}", update)
         await progress_msg.edit_text(f"📄 Вывод:\n{summary[:1000]}")  # Truncate long output
 
     except Exception as e:
