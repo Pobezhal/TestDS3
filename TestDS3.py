@@ -242,30 +242,36 @@ async def call_deepseek(prompt: str) -> str:
 # --------------------------------------
 # GROUP MENTION HANDLER (SPECIAL CASE)
 # --------------------------------------
+
 async def handle_mention(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    # Skip if message doesn't actually mention our bot
-    if not update.message.text or not context.bot.username:
+    if not update.message or not update.message.text:
         return
     
-    bot_username = context.bot.username.lower()
-    message_text = update.message.text.lower()
+    chat_type = update.message.chat.type
+    is_private = chat_type == "private"
     
-    # Check if message contains @bot_username as separate word
-    if f"@{bot_username}" not in message_text.split():
-        return
+    # Group chat logic - only respond to direct @mentions
+    if not is_private:
+        if not context.bot.username:
+            return
+            
+        bot_username = context.bot.username.lower()
+        message_text = update.message.text.lower()
+        
+        # Check for @botname as separate word
+        if f"@{bot_username}" not in message_text.split():
+            return
     
-    # Original logic
+    # Original processing logic for both chat types
     chat_id = update.message.chat.id
     user_id = update.effective_user.id
     memory_key = (chat_id, user_id)
     
-    # Initialize memory if needed
     if memory_key not in chat_memories:
         chat_memories[memory_key] = []
     
     chat_memories[memory_key].append(update.message.text)
     
-    # Build context-aware prompt
     context_messages = "\n".join(chat_memories[memory_key])
     prompt = (
         f"Context (last messages):\n{context_messages}\n\n"
