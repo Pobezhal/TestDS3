@@ -373,67 +373,59 @@ async def handle_file(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
 
 async def handle_image(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    """Handle incoming images and analyze them with GPT-4 Vision"""
-    # Check if we have an image
+async def handle_image(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    """Handle images with custom user prompts"""
     if not update.message.photo:
         await update.message.reply_text("Это не изображение.")
         return
     
     try:
-        # Get the highest resolution photo
+        # Get image
         photo_file = await update.message.photo[-1].get_file()
-        
-        # Download the photo to memory
         photo_bytes = BytesIO()
         await photo_file.download_to_memory(out=photo_bytes)
-        photo_bytes.seek(0)
+        base64_image = base64.b64encode(photo_bytes.getvalue()).decode('utf-8')
         
-        # Encode image
-        base64_image = base64.b64encode(photo_bytes.read()).decode('utf-8')
-        
-        # Show processing message
-        processing_msg = await update.message.reply_text("Проверяю")
-        
-        # Prepare prompt based on mode
-        if current_mode == BotMode.VOLODYA:
-            prompt_text = ("Как психолог-провокатор Володя, проанализируй это изображение. "
-                         "Опиши что видишь и дай саркастичный психологический анализ (3 предложения). "
-                         "Начинай с 'Как специалист скажу...'")
-        else:
-            prompt_text = "Опиши это изображение в очень саркастичной манере c матом и провокацией (3 предложения)"
-        
-        # API Request
-        response = openai_client.chat.completions.create(
-            model="gpt-4o-mini", 
-            messages=[
-                {
-                    "role": "user",
-                    "content": [
-                        {"type": "text", "text": prompt_text},
-                        {
-                            "type": "image_url",
-                            "image_url": {
-                                "url": f"data:image/jpeg;base64,{base64_image}",
-                                 "detail": "low"
-                            }
-                        }
-                    ]
-                }
-            ],
-            max_tokens=150
+        # Get user's question
+        user_question = (
+            update.message.caption or 
+            (update.message.reply_to_message.text if update.message.reply_to_message else None) or
+            "Опиши это изображение. "  # Default
         )
         
-        # Get response and clean it up
-        analysis = response.choices[0].message.content
-        analysis = analysis.replace('"', '').replace('«', '').replace('»', '')
+        # Build prompt
+        if current_mode == BotMode.VOLODYA:
+            prompt_text = f"Как психолог Володя, ответь: '{user_question}'. Дай саркастичный анализ. Начинай с 'Как специалист скажу...'"
+        else:
+            prompt_text = f"Ответь на вопрос: '{user_question}'. (3 предложения)"
         
-        # Edit the processing message with the result
-        await processing_msg.edit_text(analysis[:1000])  # Truncate to 1000 chars to be safe
+        # Process
+        processing_msg = await update.message.reply_text(" Проверяю")
+        response = openai_client.chat.completions.create(
+            model="gpt-4-vision-preview",
+            messages=[{
+                "role": "user",
+                "content": [
+                    {"type": "text", "text": prompt_text},
+                    {
+                        "type": "image_url",
+                        "image_url": {
+                            "url": f"data:image/jpeg;base64,{base64_image}",
+                            "detail": "low"
+                        }
+                    }
+                ]
+            }],
+            max_tokens=250
+        )
+        
+        # Send result
+        analysis = response.choices[0].message.content
+        await processing_msg.edit_text(analysis[:1000])
         
     except Exception as e:
-        logger.error(f"Image processing error: {e}")
-        await update.message.reply_text("Картинка кривая. Попробуй другую.")
-            
+        logger.error(f"Image error: {e}")
+        await update.message.reply_text("Чёт не вышло. Попробуй другую картинку.")
 
 # --------------------------------------
 # REGISTER ALL COMMANDS
@@ -470,20 +462,28 @@ app.add_handler(MessageHandler(
         handle_mention(update, ctx)
 ))
 
-# ===== 3. GROUP CHAT HANDLER (requires @mention) =====
+
+# ===== 2. PRIVATE CHAT HANDLER =====
 app.add_handler(MessageHandler(
-    filters.ChatType.GROUPS & filters.Entity("mention") & (
-        filters.TEXT | 
-        filters.PHOTO | 
-        filters.Document.ALL
-    ),
+    filters.ChatType.PRIVATE & (filters.TEXT | filters.PHOTO | filters.Document.ALL),
     lambda update, ctx: (
         handle_image(update, ctx) if update.message.photo else
         handle_file(update, ctx) if update.message.document else
         handle_mention(update, ctx)
+    )
 ))
 
-# ===== 4. REPLY HANDLER (works everywhere) =====
+# ===== 3. GROUP CHAT HANDLER =====
+app.add_handler(MessageHandler(
+    filters.ChatType.GROUPS & filters.Entity("mention") & (filters.TEXT | filters.PHOTO | filters.Document.ALL),
+    lambda update, ctx: (
+        handle_image(update, ctx) if update.message.photo else
+        handle_file(update, ctx) if update.message.document else
+        handle_mention(update, ctx)
+    )
+))
+
+# ===== 4. REPLY HANDLER =====
 app.add_handler(MessageHandler(
     filters.TEXT & filters.REPLY,
     handle_reply
