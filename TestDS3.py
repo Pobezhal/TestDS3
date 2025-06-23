@@ -265,19 +265,26 @@ async def handle_mention(update: Update, context: ContextTypes.DEFAULT_TYPE):
     chat_type = update.message.chat.type
     is_private = chat_type == "private"
     
-    # Group chat logic - only respond to direct @mentions
-    if not is_private:
+    # Новое: проверка на реплай боту
+    is_reply_to_bot = (
+        not is_private 
+        and update.message.reply_to_message 
+        and update.message.reply_to_message.from_user.id == context.bot.id
+    )
+
+    # Обновлённое условие для групп
+    if not is_private and not is_reply_to_bot:
         if not context.bot.username:
             return
             
         bot_username = context.bot.username.lower()
         message_text = update.message.text.lower()
         
-        # Check for @botname as separate word
-        if f"@{bot_username}" not in message_text.split():
-            return
-    
-    # Original processing logic for both chat types
+        # Проверяем И @mention ИЛИ реплай
+        if f"@{bot_username}" not in message_text.split():  # ← Сохраняем старую проверку
+            return  # Но теперь is_reply_to_bot уже обработан выше
+
+    # Существующая логика обработки (без изменений)
     chat_id = update.message.chat.id
     user_id = update.effective_user.id
     memory_key = (chat_id, user_id)
