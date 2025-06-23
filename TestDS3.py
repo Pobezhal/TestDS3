@@ -457,29 +457,37 @@ commands = [
 for cmd, handler in commands:
     app.add_handler(CommandHandler(cmd, handler))
 
-async def smart_router(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    if update.message.photo:
-        await handle_image(update, context)
-    elif update.message.document:
-        await handle_file(update, context)
-    else:
-        await handle_mention(update, context)
-
+# ===== 2. PRIVATE CHAT HANDLER (responds to everything) =====
 app.add_handler(MessageHandler(
-    (filters.TEXT | filters.PHOTO | filters.Document.ALL) &  # All message types
-    (
-        filters.ChatType.PRIVATE |  # Always allow in private
-        (filters.ChatType.GROUPS & filters.Entity("mention"))  # Require @mention in groups
+    filters.ChatType.PRIVATE & (
+        filters.TEXT | 
+        filters.PHOTO | 
+        filters.Document.ALL
     ),
-    smart_router
+    lambda update, ctx: (
+        handle_image(update, ctx) if update.message.photo else
+        handle_file(update, ctx) if update.message.document else
+        handle_mention(update, ctx)
 ))
 
-# ===== 3. REPLY HANDLER (works without @mention) ===== 
+# ===== 3. GROUP CHAT HANDLER (requires @mention) =====
+app.add_handler(MessageHandler(
+    filters.ChatType.GROUPS & filters.Entity("mention") & (
+        filters.TEXT | 
+        filters.PHOTO | 
+        filters.Document.ALL
+    ),
+    lambda update, ctx: (
+        handle_image(update, ctx) if update.message.photo else
+        handle_file(update, ctx) if update.message.document else
+        handle_mention(update, ctx)
+))
+
+# ===== 4. REPLY HANDLER (works everywhere) =====
 app.add_handler(MessageHandler(
     filters.TEXT & filters.REPLY,
     handle_reply
 ))
-
 
 if __name__ == "__main__":
     print("⚡ Helper запущен с точным набором функций")
