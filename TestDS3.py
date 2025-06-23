@@ -449,21 +449,7 @@ commands = [
 for cmd, handler in commands:
     app.add_handler(CommandHandler(cmd, handler))
 
-# ===== 2. PRIVATE CHAT HANDLER (responds to everything) =====
-app.add_handler(MessageHandler(
-    filters.ChatType.PRIVATE & (
-        filters.TEXT | 
-        filters.PHOTO | 
-        filters.Document.ALL
-    ),
-    lambda update, ctx: (
-        handle_image(update, ctx) if update.message.photo else
-        handle_file(update, ctx) if update.message.document else
-        handle_mention(update, ctx)
-))
-
-
-# ===== 2. PRIVATE CHAT HANDLER =====
+# ===== 1. PRIVATE CHAT HANDLER =====
 app.add_handler(MessageHandler(
     filters.ChatType.PRIVATE & (filters.TEXT | filters.PHOTO | filters.Document.ALL),
     lambda update, ctx: (
@@ -471,9 +457,9 @@ app.add_handler(MessageHandler(
         handle_file(update, ctx) if update.message.document else
         handle_mention(update, ctx)
     )
-))
+))  # This was missing
 
-# ===== 3. GROUP CHAT HANDLER =====
+# ===== 2. GROUP CHAT HANDLER =====
 app.add_handler(MessageHandler(
     filters.ChatType.GROUPS & filters.Entity("mention") & (filters.TEXT | filters.PHOTO | filters.Document.ALL),
     lambda update, ctx: (
@@ -481,13 +467,14 @@ app.add_handler(MessageHandler(
         handle_file(update, ctx) if update.message.document else
         handle_mention(update, ctx)
     )
-))
+))  # Properly closed
 
-# ===== 4. REPLY HANDLER =====
+# ===== 3. REPLY HANDLER =====
 app.add_handler(MessageHandler(
     filters.TEXT & filters.REPLY,
     handle_reply
 ))
+
 
 if __name__ == "__main__":
     print("⚡ Helper запущен с точным набором функций")
