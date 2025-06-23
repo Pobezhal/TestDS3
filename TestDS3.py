@@ -472,23 +472,17 @@ commands = [
 for cmd, handler in commands:
     app.add_handler(CommandHandler(cmd, handler))
 
-# ===== 1. PRIVATE CHAT HANDLER (keep) =====
-app.add_handler(MessageHandler(
-    filters.ChatType.PRIVATE & (filters.TEXT | filters.PHOTO | filters.Document.ALL),
-    lambda update, ctx: (
-        handle_image(update, ctx) if update.message.photo else
-        handle_file(update, ctx) if update.message.document else
-        handle_mention(update, ctx)
-    )
-))
+app.add_handler(MessageHandler(filters.ChatType.PRIVATE & filters.PHOTO, handle_image))
+app.add_handler(MessageHandler(filters.ChatType.PRIVATE & filters.Document.ALL, handle_file))
+app.add_handler(MessageHandler(filters.ChatType.PRIVATE & filters.TEXT, handle_mention))
 
-# ===== 2. GROUP CHAT HANDLER (REPLACE with this) =====
+# Group chat handlers - only when mentioned with @botname
 app.add_handler(MessageHandler(
     filters.ChatType.GROUPS & (filters.TEXT | filters.PHOTO | filters.Document.ALL),
-    group_handler  # Your custom function that checks @mentions
+    group_handler  # This function should check for @mention then route to appropriate handler
 ))
 
-# ===== 3. REPLY HANDLER (keep one) =====
+# Reply handler - works in both private and group chats when someone replies to bot
 app.add_handler(MessageHandler(
     filters.TEXT & filters.REPLY,
     handle_reply
