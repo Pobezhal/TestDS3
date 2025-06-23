@@ -321,7 +321,7 @@ async def handle_file(update: Update, context: ContextTypes.DEFAULT_TYPE):
     ALLOWED_EXTENSIONS = [".pdf", ".docx", ".txt", ".csv"]
     file_ext = os.path.splitext(update.message.document.file_name)[1].lower()
     
-    if file_ext not in ALLOWED_EXTENSIONS:
+    if file_ext not in ALLOWED_EXTENSIONS update.message.photo:
         await update.message.reply_text("❌ Только PDF/DOCX/TXT/CSV.")
         return
 
