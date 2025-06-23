@@ -15,6 +15,10 @@ import base64
 from io import BytesIO
 from openai import OpenAI
 
+import sys
+
+print("DEBUG: OPENAI_API_KEY =", os.environ.get("OPENAI_API_KEY"), file=sys.stderr)
+
 # Chat memory: { (chat_id, user_id): deque(maxlen=32) }
 chat_memories = defaultdict(lambda: deque(maxlen=32))
 
