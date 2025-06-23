@@ -8,7 +8,7 @@
   },
   "build": {
     "nixpacks": {
-      "packages": ["poppler-utils"]
+      "packages": ["poppler-utils", "libjpeg", "zlib"]
     }
   }
 }
