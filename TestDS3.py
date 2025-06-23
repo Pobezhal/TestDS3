@@ -11,12 +11,17 @@ from telegram.ext import filters
 import logging
 from collections import defaultdict, deque
 from enum import Enum, auto
+import base64
+from io import BytesIO
+from openai import OpenAI
 
 # Chat memory: { (chat_id, user_id): deque(maxlen=32) }
 chat_memories = defaultdict(lambda: deque(maxlen=32))
 
 # Load tokens
 #load_dotenv()
+
+openai_client = OpenAI(api_key=os.getenv("OPENAI_API_KEY"))
 
 class BotMode(Enum):
     NORMAL = auto()
@@ -356,12 +361,80 @@ async def handle_file(update: Update, context: ContextTypes.DEFAULT_TYPE):
         # Cleanup
         if os.path.exists(file_path):
             os.remove(file_path)
+
+
+async def handle_image(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    """Handle incoming images and analyze them with GPT-4 Vision"""
+    # Check if we have an image
+    if not update.message.photo:
+        await update.message.reply_text("Это не изображение, дебик.")
+        return
+    
+    try:
+        # Get the highest resolution photo
+        photo_file = await update.message.photo[-1].get_file()
+        
+        # Download the photo to memory
+        photo_bytes = BytesIO()
+        await photo_file.download_to_memory(out=photo_bytes)
+        photo_bytes.seek(0)
+        
+        # Encode image
+        base64_image = base64.b64encode(photo_bytes.read()).decode('utf-8')
+        
+        # Show processing message
+        processing_msg = await update.message.reply_text("🔍 Анализирую картинку...")
+        
+        # Prepare prompt based on mode
+        if current_mode == BotMode.VOLODYA:
+            prompt_text = ("Как психолог-провокатор Володя, проанализируй это изображение. "
+                         "Опиши что видишь и дай саркастичный психологический анализ (3 предложения). "
+                         "Начинай с 'Как специалист скажу...'")
+        else:
+            prompt_text = "Опиши это изображение в очень смешной и саркастичной манере (3 предложения, можно с матом)"
+        
+        # API Request
+        response = openai_client.chat.completions.create(
+            model="gpt-4-vision-preview",  # Changed from "gpt-4o-mini" to the correct model name
+            messages=[
+                {
+                    "role": "user",
+                    "content": [
+                        {"type": "text", "text": prompt_text},
+                        {
+                            "type": "image_url",
+                            "image_url": {
+                                "url": f"data:image/jpeg;base64,{base64_image}"
+                            }
+                        }
+                    ]
+                }
+            ],
+            max_tokens=150
+        )
+        
+        # Get response and clean it up
+        analysis = response.choices[0].message.content
+        analysis = analysis.replace('"', '').replace('«', '').replace('»', '')
+        
+        # Edit the processing message with the result
+        await processing_msg.edit_text(analysis[:1000])  # Truncate to 1000 chars to be safe
+        
+    except Exception as e:
+        logger.error(f"Image processing error: {e}")
+        await update.message.reply_text("Чёт не вышло, картинка кривая. Попробуй другую.")
             
 app.add_handler(MessageHandler(
     filters.TEXT &
     filters.REPLY &
     (filters.ChatType.GROUPS | filters.ChatType.PRIVATE),
     handle_reply
+))
+
+app.add_handler(MessageHandler(
+    filters.PHOTO & 
+    (filters.ChatType.PRIVATE | filters.ChatType.GROUPS),
+    handle_image
 ))
 
 # --------------------------------------
