@@ -28,7 +28,9 @@ chat_memories = defaultdict(lambda: deque(maxlen=32))
 
 
 #openai_client = OpenAI(api_key=os.getenv("OPENAI_API_KEY"))
-openai_client = OpenAI(api_key=os.environ.get("MY_OPENAI_KEY"))
+#openai_client = OpenAI(api_key=os.environ.get("MY_OPENAI_KEY"))
+print("OPENAI_KEY_EXISTS:", "OPENAI_API_KEY" in os.environ)  # Debug line
+openai_client = OpenAI(api_key=os.environ["OPENAI_API_KEY"])
 
 
 
