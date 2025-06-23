@@ -300,49 +300,60 @@ async def handle_reply(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
 
 async def handle_file(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    MAX_SIZE_MB = 5  # 5MB limit for PDF/DOCX, 2MB for others
-    ALLOWED_EXTENSIONS = {
-        ".txt": 2, 
-        ".csv": 2,
-        ".pdf": 5, 
-        ".docx": 5
-    }
+    ALLOWED_EXTENSIONS = [".pdf", ".docx", ".txt", ".csv"]
+    MAX_SIZE_MB = 5  # Adjust based on your RAM limits
     
     file = update.message.document
-    file_size_mb = file.file_size / (1024 * 1024)
     file_ext = os.path.splitext(file.file_name)[1].lower()
     
-    # Validate file
+    # 1. Validate file type
     if file_ext not in ALLOWED_EXTENSIONS:
-        await update.message.reply_text(
-            "❌ Можно только TXT, CSV, PDF или DOCX. "
-            "Эксель — для офисного планктона."
-        )
+        await update.message.reply_text("❌ Только PDF, DOCX, TXT или CSV.")
         return
     
-    if file_size_mb > ALLOWED_EXTENSIONS[file_ext]:
-        await update.message.reply_text(
-            f"❌ Файл слишком большой (макс. {ALLOWED_EXTENSIONS[file_ext]}MB). "
-            "Сожми его или вырежи нужную часть."
-        )
+    # 2. Validate file size
+    file_size_mb = file.file_size / (1024 * 1024)
+    if file_size_mb > MAX_SIZE_MB:
+        await update.message.reply_text(f"❌ Файл слишком большой (макс. {MAX_SIZE_MB}MB).")
         return
     
-    # Download with progress
-    msg = await update.message.reply_text("📥 Качаю файл...")
+    # 3. Download with progress
+    progress_msg = await update.message.reply_text("📥 Качаю файл...")
     file_path = await file.get_file().download_to_drive()
     
     try:
-        # ... [use the parsing logic from previous examples] ...
-        summary = await call_deepseek(f"Резюме документа:\n{text[:3000]}")
-        await msg.edit_text(f"📄 Готово:\n{summary}")
+        text = ""
+        # 4. PARSE THE FILE BASED ON TYPE
+        if file_ext == ".pdf":
+            import PyPDF2
+            with open(file_path, "rb") as f:
+                reader = PyPDF2.PdfReader(f)
+                text = "\n".join([page.extract_text() for page in reader.pages if page.extract_text()])
+        
+        elif file_ext == ".docx":
+            from docx import Document
+            doc = Document(file_path)
+            text = "\n".join([para.text for para in doc.paragraphs if para.text])
+        
+        elif file_ext in (".txt", ".csv"):
+            with open(file_path, "r", encoding="utf-8") as f:
+                text = f.read()
+        
+        # 5. Summarize with DeepSeek
+        if not text.strip():
+            await progress_msg.edit_text("🤷‍♂️ Файл пуст или нечитаем.")
+            return
+            
+        summary = await call_deepseek(f"Кратко резюмируй документ (3 предложения):\n{text[:3000]}")
+        await progress_msg.edit_text(f"📄 Вывод:\n{summary}")
     
     except Exception as e:
         logger.error(f"File error: {e}")
-        await msg.edit_text("💥 Ошибка. Не то чтобы я не смог, но... попробуй другой файл.")
+        await progress_msg.edit_text("💥 Ошибка. Не то чтобы я не смог, но... попробуй другой файл.")
     
     finally:
         if os.path.exists(file_path):
-            os.remove(file_path)
+            os.remove(file_path)  
 
 
 app.add_handler(MessageHandler(
