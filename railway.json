@@ -1,7 +1,14 @@
+
+
 {
   "deploy": {
     "startCommand": "python TestDS3.py",
     "restartPolicyType": "ON_FAILURE",
     "startTimeout": 120
+  },
+  "build": {
+    "nixpacks": {
+      "packages": ["poppler-utils"]
+    }
   }
 }
