@@ -4,6 +4,7 @@ from telegram.ext import Application, CommandHandler, MessageHandler, filters, C
 from telegram import Update
 import requests
 import os
+from telegram import Update
 import random
 from telegram.ext import filters
 #from dotenv import load_dotenv
@@ -298,6 +299,52 @@ async def handle_reply(update: Update, context: ContextTypes.DEFAULT_TYPE):
     await update.message.reply_text(await call_deepseek(prompt))
 
 
+async def handle_file(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    MAX_SIZE_MB = 5  # 5MB limit for PDF/DOCX, 2MB for others
+    ALLOWED_EXTENSIONS = {
+        ".txt": 2, 
+        ".csv": 2,
+        ".pdf": 5, 
+        ".docx": 5
+    }
+    
+    file = update.message.document
+    file_size_mb = file.file_size / (1024 * 1024)
+    file_ext = os.path.splitext(file.file_name)[1].lower()
+    
+    # Validate file
+    if file_ext not in ALLOWED_EXTENSIONS:
+        await update.message.reply_text(
+            "❌ Можно только TXT, CSV, PDF или DOCX. "
+            "Эксель — для офисного планктона."
+        )
+        return
+    
+    if file_size_mb > ALLOWED_EXTENSIONS[file_ext]:
+        await update.message.reply_text(
+            f"❌ Файл слишком большой (макс. {ALLOWED_EXTENSIONS[file_ext]}MB). "
+            "Сожми его или вырежи нужную часть."
+        )
+        return
+    
+    # Download with progress
+    msg = await update.message.reply_text("📥 Качаю файл...")
+    file_path = await file.get_file().download_to_drive()
+    
+    try:
+        # ... [use the parsing logic from previous examples] ...
+        summary = await call_deepseek(f"Резюме документа:\n{text[:3000]}")
+        await msg.edit_text(f"📄 Готово:\n{summary}")
+    
+    except Exception as e:
+        logger.error(f"File error: {e}")
+        await msg.edit_text("💥 Ошибка. Не то чтобы я не смог, но... попробуй другой файл.")
+    
+    finally:
+        if os.path.exists(file_path):
+            os.remove(file_path)
+
+
 app.add_handler(MessageHandler(
     filters.TEXT &
     filters.REPLY &
@@ -332,6 +379,13 @@ app.add_handler(MessageHandler(
     (filters.TEXT & filters.ChatType.PRIVATE),  # Add private chats
     handle_mention
 ))
+
+app.add_handler(MessageHandler(
+    filters.Document.ALL & 
+    (filters.ChatType.PRIVATE | filters.ChatType.GROUPS),
+    handle_file
+))
+
 if __name__ == "__main__":
-    print("⚡ Бот запущен с точным набором функций")
+    print("⚡ Helper запущен с точным набором функций")
     app.run_polling()
