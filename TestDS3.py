@@ -372,7 +372,7 @@ async def handle_file(update: Update, context: ContextTypes.DEFAULT_TYPE):
             os.remove(file_path)
 
 
-async def handle_image(update: Update, context: ContextTypes.DEFAULT_TYPE):
+
 async def handle_image(update: Update, context: ContextTypes.DEFAULT_TYPE):
     """Handle images with custom user prompts"""
     if not update.message.photo:
