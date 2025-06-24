@@ -335,6 +335,13 @@ async def handle_file(update: Update, context: ContextTypes.DEFAULT_TYPE):
     if update.message.photo:
         return  # handle_image() will catch this
 
+    if (update.message.document 
+        and update.message.document.mime_type.startswith('image/')
+        and not update.message.photo):
+        await handle_image(update, context)  # Force-process as image
+        return
+
+    
     # 2. Validate file type
     ALLOWED_EXTENSIONS = [".pdf", ".docx", ".txt", ".csv"]
     try:
