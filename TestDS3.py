@@ -324,9 +324,13 @@ async def handle_reply(update: Update, context: ContextTypes.DEFAULT_TYPE):
 async def handle_file(update: Update, context: ContextTypes.DEFAULT_TYPE):
     
         # IMMEDIATELY skip all photo-type documents
+    # if update.message.photo or (update.message.document and update.message.document.mime_type.startswith('image/')):
+    #     return
     if update.message.photo or (update.message.document and update.message.document.mime_type.startswith('image/')):
-        return
-    
+        await handle_image(update, context)  # Send to image handler
+        return  # Exit to avoid double-processing
+
+
     """Process ONLY PDF/DOCX/TXT/CSV files (strictly ignores images)"""
     # 1. Early exit for non-documents or images
     if not update.message.document:
