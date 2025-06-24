@@ -352,19 +352,45 @@ async def handle_file(update: Update, context: ContextTypes.DEFAULT_TYPE):
     file_path = f"/tmp/{int(time.time())}_{update.message.document.file_name}"
     
     try:
-        # Download file
-        telegram_file = await update.message.document.get_file()
-        await telegram_file.download_to_drive(custom_path=file_path)
-        
-        if not os.path.exists(file_path):
-            await progress_msg.edit_text("💥 Файл не сохранился на сервере.")
-            return
+        # NEW: Retry download up to 3 times
+        for attempt in range(3):
+            try:
+                telegram_file = await update.message.document.get_file()
+                await telegram_file.download_to_drive(custom_path=file_path)
+                if os.path.exists(file_path) and os.path.getsize(file_path) > 0:
+                    break
+                elif attempt == 2:
+                    await progress_msg.edit_text("💥 Файл не скачался.")
+                    return
+            except Exception as e:
+                if attempt == 2:
+                    await progress_msg.edit_text("💥 Ошибка загрузки.")
+                    return
+                await asyncio.sleep(1)
 
+        # NEW: Validate DOCX structure before processing
+        if file_ext == ".docx":
+            from zipfile import ZipFile
+            with ZipFile(file_path) as z:
+                if 'word/document.xml' not in z.namelist():
+                    await progress_msg.edit_text("❌ Файл DOCX повреждён.")
+                    return
         # Parse content
         text = ""
         if file_ext == ".pdf":
+            # from pdfminer.high_level import extract_text
+            # text = extract_text(file_path)
+            # if not text.strip():
+            #     await progress_msg.edit_text("🤷‍♂️ PDF пустой или только картинки.")
+            #     return 
+
             from pdfminer.high_level import extract_text
-            text = extract_text(file_path)
+            try:
+                text = extract_text(file_path)  # Let it fail naturally
+            except Exception as e:
+                logger.error(f"PDF Error: {e}")
+                await progress_msg.edit_text("🤖 Не смог прочитать PDF (попробуй другой файл)")
+                return
         elif file_ext == ".docx":
             from docx import Document
             doc = Document(file_path)
