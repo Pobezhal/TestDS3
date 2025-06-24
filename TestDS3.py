@@ -347,7 +347,7 @@ async def handle_mention(update: Update, context: ContextTypes.DEFAULT_TYPE):
     prompt = (
         f"Context (last messages):\n{context_messages}\n\n"
         f"New message: {update.message.text}\n\n"
-        "Отвечай уверенно (макс. 3 предложения)"
+        "Отвечай уверенно (макс. 5 предложений)"
     )
 
     payload = build_prompt(chat_id, prompt, chat_modes[chat_id])
