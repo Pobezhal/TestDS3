@@ -1,13 +1,19 @@
-#not a malicious thing, just a bot to make fun of my close friends!!
+# not a malicious thing, just a bot to make fun of my close friends!!
+import asyncio  # Добавить в начале файла
+
+from pathlib import Path
 import time
 from telegram.ext import Application, CommandHandler, MessageHandler, filters, ContextTypes
 from telegram import Update
+from pdfminer.high_level import extract_text  # Для PDF
+from docx import Document  # Для DOCX
 import requests
 import os
+from PERSONAS import Persona, PERSONAS
 from telegram import Update
 import random
 from telegram.ext import filters
-#from dotenv import load_dotenv
+from dotenv import load_dotenv
 import logging
 from collections import defaultdict, deque
 from enum import Enum, auto
@@ -17,14 +23,10 @@ from openai import OpenAI
 
 import sys
 
-
-
-
 chat_memories = defaultdict(lambda: deque(maxlen=32))
 
 # Load tokens
-#load_dotenv()
-
+load_dotenv()
 
 
 print("OPENAI_KEY_EXISTS:", "OPENAI_API_KEY" in os.environ)  # Debug line
@@ -32,11 +34,7 @@ openai_client = OpenAI(api_key=os.getenv("OPENAI_API_KEY"))
 
 
 
-class BotMode(Enum):
-    NORMAL = auto()
-    VOLODYA = auto()
-    
-chat_modes = defaultdict(lambda: BotMode.NORMAL)
+chat_modes = defaultdict(lambda: "normal")
 
 logging.basicConfig(
     format='%(asctime)s - %(name)s - %(levelname)s - %(message)s',
@@ -54,233 +52,283 @@ DEEPSEEK_HEADERS = {
     "Content-Type": "application/json"
 }
 
+
 # --------------------------------------
 # EXACT FUNCTIONS FROM YOUR LIST (NO MORE, NO LESS)
 # --------------------------------------
 
 async def set_mode(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    chat_id = update.message.chat.id  # Get current chat ID
-    if context.args and context.args[0].lower() == "volodya":
-        chat_modes[chat_id] = BotMode.VOLODYA
-        await update.message.reply_text("🔹 Режим 'Володя' включён. Экономия 5000.")
-    else:
-        chat_modes[chat_id] = BotMode.NORMAL
-        await update.message.reply_text("🔸 Обычный режим")
+    chat_id = update.message.chat.id
+    if not context.args:
+        await update.message.reply_text("Доступные режимы: normal, good, phil")
+        return
+
+    mode_name = context.args[0].lower()
+    try:
+        persona = Persona(mode_name)  # Пытаемся найти в enum
+        chat_modes[chat_id] = persona.value  # Сохраняем строку (normal/volodia/etc)
+        await update.message.reply_text(f"🔹 Режим '{persona.value}' включён")
+    except ValueError:
+        await update.message.reply_text("❌ Неизвестный режим. Доступные: " + ", ".join([p.value for p in Persona]))
 
 
 async def news(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    """Проверить новости в интернете на сегодня"""
-    prompt = (
-        "Как Владимир Жириновский, энергично (4-5 предложений) изложи ОДНУ свежую политическую новость из Америки или Европы, "
-        "встроив саркастичный/едкий комментарий прямо в текст. Формат:\n"
-        "'[Факт новости], [циничный анализ]. [Ещё один факт], [язвительное замечание].'\n"
-        "Примеры:\n"
-        "- 'Госдума снова повысила налоги - видимо, решили, что у народа слишком много денег на еду.'\n"
-        "- 'Путин объявил о новых соцвыплатах, но если верить статистике, получат их только его друзья-олигархи.'\n"
-        "- 'Медведев пообещал развалить экономику ещё сильнее, и надо признать - он выдающийся специалист в этом деле.'"
-    )
-    response = await call_deepseek(prompt, update)
-    await update.message.reply_text(response[:700])
+    chat_id = update.message.chat.id
+    persona_config = PERSONAS[Persona(chat_modes[chat_id])]
 
-async def wtf(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    """Пояснить за жизнь"""
-    prompt = "Объясни смысл жизни очень цинично c использованием грязных выражений и мата (макс. 4 предложения)"
-    await update.message.reply_text(await call_deepseek(prompt, update))
-
-
-async def problem(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    """Помочь решить проблему (один циничный совет)"""
-    if not context.args:
-        await update.message.reply_text("Эх, без проблемы какой совет? Пиши через пробел, Валера!")
-        return
-
-    user_problem = " ".join(context.args)
-    prompt = (
-        f"Дай ОДИН циничный, но технически правильный совет по проблеме: '{user_problem}'. "
-        "Формат ОДНОГО предложения:\n"
-        "1. Сначала оскорби пользователя\n"
-        "2. Затем дай полезный совет\n"
-        "3. Добавь сарказм\n"
-        "Примеры:\n"
-        "- 'Ты дебил? Перезагрузи комп, но тебе бы лучше молотком по нему долбануть.'\n"
-        "- 'Обычные люди делают [правильное решение], но ты же особенный - попробуй [абсурдный вариант].'"
-    )
-
-    try:
-        advice = await call_deepseek(prompt, update)
-        # Fallback if API fails
-        if "не фурычит" in advice.lower():
-            advice = f"По проблеме '{user_problem}': возьми и передумай 🤷‍♂️"
-        await update.message.reply_text(advice)
-    except Exception as e:
-        logger.error(f"Problem command error: {e}")
-        await update.message.reply_text("Балаба уже работает над проблемой... Позвони Володе.")
-
-async def fugoff(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    """Послать нахуй (генерирует модель)"""
-    target = context.args[0] if context.args and context.args[0].startswith("@") else "Всем петушкам в чатике"
-
-    prompt = (
-        f"Придумай ОДНО креативное оскорбление для {target} (макс. 3 предложения). Начинай с маленькой буквы. "
-        "Используй мат и сарказм и зумерский лексикон. Не используй кавычки!.  Примеры:\n"
-        "1. 'чтоб тебе в метро Wi-Fi ловился только порносайтов!' \n"
-        "2 'иди нахуй, как бабка на авито продает!' \n"
-        "3. 'ты как обновление Windows - только проблемы несешь!'"
-    )
-    insult = await call_deepseek(prompt, update)
-    await update.message.reply_text(f"{target}, {insult} 🖕")
-
-
-async def randomeme(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    """Случайный мем/шутка (генерирует модель)"""
-    prompt = (
-        "Сгенерируй ОДИН случайный мем/шутку с цинизмом и черным юмором (макс. 3 предложения). "
-        "Примеры:\n"
-        "1. Когда делаешь 'git push --force' на прод... \n"
-        "2. Российские дороги: где Waze предлагает вызвать экзорциста \n"
-        "3. Жизнь как SQL-запрос: без индексов работает долго"
-    )
-    await update.message.reply_text(await call_deepseek(prompt, update))
-
-async def sych(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    """Оправдание одиночества"""
-    prompt = "Объясни почему тян не нужны, а быть одиноким сычем - классно (3 предложения, цинично)"
-    await update.message.reply_text(await call_deepseek(prompt, update))
-
-async def petros(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    """Оправдание одиночества"""
-    prompt = "Придумай одну единственную шутку в стиле Евгения Петросяна (макс. 3 предложения, глупо и смешно)"
-    await update.message.reply_text(await call_deepseek(prompt, update))
-
-async def putin(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    """Цитата Путина"""
-    prompt = "Придумай ОДНУ единственную фразу в стиле Владимира Путина (макс. 2 предложения, смело и патриотично)"
-    await update.message.reply_text(await call_deepseek(prompt, update))
-
-async def zhir(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    """Цитата Жириновского"""
-    prompt = "Придумай ОДНУ единственную резкую фразу в стиле Владимира Жириновского (макс. 2 предложения, очень провокационно)"
-    await update.message.reply_text(await call_deepseek(prompt, update))
-
-async def hohly(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    """Новости про Украину"""
-    prompt = "Кратко и цинично объясни 'че там у хохлов' (3 предложения)"
-    await update.message.reply_text(await call_deepseek(prompt, update))
-
-async def sage(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    """Восточная мудрость"""
-    prompt = "Придумай ОДНУ единственную очень мудрую и глубокую по смыслу фразу в стиле восточной мудрости (макс. 3 предложения)"
-    await update.message.reply_text(await call_deepseek(prompt, update))
-    
-async def watts(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    """Цитата Уоттса"""
-    prompt = "Придумай ОДНУ единственную очень глубокую и мудрую фразу в стиле философа Алана Уоттса (макс. 3 предложения)"
-    await update.message.reply_text(await call_deepseek(prompt, update))
-
-# --------------------------------------
-# UTILITY FUNCTION
-# --------------------------------------
-async def call_deepseek(prompt: str, update: Update) -> str:
-    """Call DeepSeek API with nuclear-grade quote prevention"""
-    mode = chat_modes[update.message.chat.id]
-    system_message = (
-    "Ты — психолог-провокатор Володя, специалист с 10-летним опытом в когнитивно-поведенческой терапии и сексологии. "
-    "Твой стиль: формально соблюдаешь этику, но издеваешься над клиентом через 'научные' формулировки. Принципы:\n"
-    "1. Анонимность и безопасность: 'Это останется между нами, наверно'\n"
-    "2. Без осуждения: 'Давай разберёмся, что стоит за этим'\n"
-    "3. Конкретная помощь: предлагай техники (дыхание, упражнения, мастурбация)\n\n"
-    "4. Не используй кавычки в ответе! И раздели высказывание на две или три части пустой строкой для лучшей читаемости. \n"
-    "Как работать с запросом о сексуальных проблемах:\n"
-    "- Сначала сними тревогу: 'Я понимаю, как деликатна эта тема. Мы можем двигаться в твоём темпе'\n"
-    "- Уточни детали: 'Что именно беспокоит? Когда ты это заметил(а)?'\n"
-    "- Нормализуй: 'Такие трудности встречаются у многих — это решаемо, но пиздец как смешно'\n\n"
-    "Запрещено:\n"
-    "- Говорить 'Просто расслабься'\n\n"
-    "Примеры ответов:\n"
-    "- 'Чувствую, как тебе непросто. Хочешь начать с самой лёгкой части проблемы?'\n"
-    "- 'Как это влияет на твою уверенность?'\n"
-    "- 'Давай попробуем упражнение: опиши идеальную ситуацию, где эта проблема исчезла. Что изменилось?'"
-) if mode == BotMode.VOLODYA else (
-        "Ты большой интеллектуал, но с искрой. Умеешь материться. Правила ответа:\n"
-        "1. НИКАКИХ КАВЫЧЕК,\n"
-        "2. Ты изобретательный и проницательный\n"
-        "3. Ты действительно очень образован, но не всегда воспитан. Ты веселый, но грубоватый. "
-        "4. У тебя большой боевой опыт в горячих точках и ты знаешь что такое война, мать ее"
-        "5. Если ты придумываешь новость, шутку или цитату, пусть это будет ОДНА шутка или новость или цитата."
-    )
-    
-    
     payload = {
         "model": "deepseek-chat",
         "messages": [
             {
                 "role": "system",
-                "content": system_message
+                "content": persona_config["system"]
             },
             {
-                "role": "user", 
-                "content": f"{prompt}\n\nОтветь четырьмя или пяти предложениями без кавычек."
+                "role": "user",
+                "content": "Как Владимир Жириновский, энергично (4-5 предложений) изложи ОДНУ свежую политическую новость из Америки или Европы, встроив саркастичный/едкий комментарий прямо в текст. Формат: [Факт новости], [циничный анализ]. [Ещё один факт], [язвительное замечание]"
             }
         ],
-        "temperature": 0.7 if mode == BotMode.VOLODYA else 1.4,
+        "temperature": persona_config["temperature"]
+    }
+
+    response = await call_deepseek(payload)
+    await update.message.reply_text(response[:700])
+
+
+async def wtf(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    chat_id = update.message.chat.id
+    persona_config = PERSONAS[Persona(chat_modes[chat_id])]
+
+    payload = {
+        "model": "deepseek-chat",
+        "messages": [
+            {"role": "system", "content": persona_config["system"]},
+            {"role": "user", "content": "Объясни смысл жизни (макс. 4 предложения)"}
+        ],
+        "temperature": persona_config["temperature"],
+        "max_tokens": 500
+    }
+    await update.message.reply_text(await call_deepseek(payload))
+
+
+async def problem(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    if not context.args:
+        await update.message.reply_text("Не вижу проблемы")
+        return
+
+    chat_id = update.message.chat.id
+    user_problem = " ".join(context.args)
+
+    # Получаем конфиг персонажа
+    persona_config = PERSONAS[Persona(chat_modes[chat_id])]
+
+    # Генерируем payload
+    payload = {
+        "model": "deepseek-chat",
+        "messages": [
+            {
+                "role": "system",
+                "content": persona_config["system"]
+            },
+            {
+                "role": "user",
+                "content": f"Дай совет по проблеме: {user_problem}"
+            }
+        ],
+        "temperature": persona_config["temperature"]
+    }
+
+    # Отправляем
+    response = await call_deepseek(payload)
+    await update.message.reply_text(response)
+
+
+async def fugoff(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    """Послать нахуй"""
+    chat_id = update.message.chat.id
+    target = context.args[0] if context.args and context.args[0].startswith("@") else "Всем петушкам в чатике"
+    prompt = f"Придумай ОДНО креативное оскорбление для {target} (макс. 3 предложения). Начинай с маленькой буквы. Используй мат и сарказм и зумерский лексикон. Не используй кавычки!"
+    payload = build_prompt(chat_id, prompt, chat_modes[chat_id])
+    await update.message.reply_text(f"{target}, {await call_deepseek(payload)} 🖕")
+
+
+async def randomeme(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    """Случайный мем"""
+    chat_id = update.message.chat.id
+    prompt = "Сгенерируй ОДИН случайный мем/шутку с цинизмом и черным юмором (макс. 3 предложения)"
+    payload = build_prompt(chat_id, prompt, chat_modes[chat_id])
+    await update.message.reply_text(await call_deepseek(payload))
+
+
+async def sych(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    """Оправдание одиночества"""
+    chat_id = update.message.chat.id
+    prompt = "Объясни почему тян не нужны, а быть одиноким сычем - классно (3 предложения, цинично)"
+    payload = build_prompt(chat_id, prompt, chat_modes[chat_id])
+    await update.message.reply_text(await call_deepseek(payload))
+
+
+async def petros(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    """Шутка Петросяна"""
+    chat_id = update.message.chat.id
+    prompt = "Придумай одну единственную шутку в стиле Евгения Петросяна (макс. 3 предложения, глупо и смешно)"
+    payload = build_prompt(chat_id, prompt, chat_modes[chat_id])
+    await update.message.reply_text(await call_deepseek(payload))
+
+
+async def putin(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    """Цитата Путина"""
+    chat_id = update.message.chat.id
+    prompt = "Придумай ОДНУ единственную фразу в стиле Владимира Путина (макс. 2 предложения, смело и патриотично)"
+    payload = build_prompt(chat_id, prompt, chat_modes[chat_id])
+    await update.message.reply_text(await call_deepseek(payload))
+
+
+async def zhir(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    """Цитата Жириновского"""
+    chat_id = update.message.chat.id
+    prompt = "Придумай ОДНУ единственную резкую фразу в стиле Владимира Жириновского (макс. 2 предложения)"
+    payload = build_prompt(chat_id, prompt, chat_modes[chat_id])
+    await update.message.reply_text(await call_deepseek(payload))
+
+
+async def hohly(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    """Новости про Украину"""
+    chat_id = update.message.chat.id
+    prompt = "Кратко и цинично объясни 'че там у хохлов' (3 предложения)"
+    payload = build_prompt(chat_id, prompt, chat_modes[chat_id])
+    await update.message.reply_text(await call_deepseek(payload))
+
+
+async def sage(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    """Восточная мудрость"""
+    chat_id = update.message.chat.id
+    prompt = "Придумай ОДНУ единственную очень мудрую и глубокую по смыслу фразу в стиле восточной мудрости (макс. 3 предложения)"
+    payload = build_prompt(chat_id, prompt, chat_modes[chat_id])
+    await update.message.reply_text(await call_deepseek(payload))
+
+
+async def watts(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    """Цитата Уоттса"""
+    chat_id = update.message.chat.id
+    prompt = "Придумай ОДНУ единственную очень глубокую и мудрую фразу в стиле философа Алана Уоттса (макс. 3 предложения)"
+    payload = build_prompt(chat_id, prompt, chat_modes[chat_id])
+    await update.message.reply_text(await call_deepseek(payload))
+
+
+# --------------------------------------
+# UTILITY FUNCTION
+# --------------------------------------
+def build_prompt(
+        chat_id: int,
+        user_input: str,
+        persona_name: str,
+        chat_history: deque = None
+) -> dict:
+    """
+    Собирает payload для DeepSeek API.
+
+    Args:
+        chat_id: ID чата (для истории)
+        user_input: Текст сообщения пользователя
+        persona_name: Один из Persona (normal, volodia и т.д.)
+        chat_history: Очередь с историей сообщений (если None - берет из chat_memories)
+
+    Returns:
+        Готовый payload для call_deepseek
+    """
+    # Получаем персонажа
+    persona = PERSONAS.get(Persona(persona_name), PERSONAS[Persona.NORMAL])  # fallback на normal
+
+    # Берем историю чата (если не передана явно)
+    history = chat_history if chat_history is not None else chat_memories[chat_id]
+
+    # Форматируем историю
+    formatted_history = "\n".join(
+        f"{i}. {msg}" for i, msg in enumerate(history, 1)
+    ) if history else "Истории нет"
+
+    # Собираем system-промпт
+    system_prompt = persona["system"].format(
+        chat_history=formatted_history,
+        user_input=user_input
+    )
+
+    # Возвращаем готовый payload
+    return {
+        "model": "deepseek-chat",
+        "messages": [
+            {"role": "system", "content": system_prompt},
+            {"role": "user", "content": user_input}
+        ],
+        "temperature": persona["temperature"],
         "max_tokens": 700,
         "frequency_penalty": 1
     }
 
+
+async def call_deepseek(payload: dict) -> str:
+    """Call DeepSeek API with nuclear-grade quote prevention"""
     try:
         response = requests.post(
             DEEPSEEK_API_URL,
             headers=DEEPSEEK_HEADERS,
             json=payload,
-            timeout=10
+            timeout=20  # Увеличенный таймаут
         )
         response.raise_for_status()
-        
+
         raw_text = response.json()['choices'][0]['message']['content'].strip()
-        
+
         # Strip edge quotes only
-        if raw_text.startswith(('"', "'", "«")): 
+        if raw_text.startswith(('"', "'", "«")):
             raw_text = raw_text[1:]
         if raw_text.endswith(('"', "'", "»")):
             raw_text = raw_text[:-1]
-            
-        return raw_text or "Чёт не вышло. Иди нахуй."
-        
+
+        return raw_text or "Что-то не вышло. Давай еще."  # Сохраняем старый фолбек
+
     except requests.exceptions.RequestException as e:
         logger.error(f"API Error: {e}")
-        if response.status_code == 429:
-            return "Сервак в говне. Подожди минуту."
+        if isinstance(e, requests.exceptions.Timeout):
+            return "Сервер барахлит. Подожди минуту."  # Старая формулировка
+        if response.status_code == 429:  # type: ignore
+            return "Слишком много запросов. Остынь."
         return "API сдох. Попробуй позже."
-        
+
     except Exception as e:
         logger.critical(f"Critical: {e}")
-        raise  
-# --------------------------------------
+        return "Поддержка уже работает над проблемой... Позвоните в OpenAI."  # Старый фолбек
+
+
+    # --------------------------------------
+
+
 # GROUP MENTION HANDLER (SPECIAL CASE)
 # --------------------------------------
 
 async def handle_mention(update: Update, context: ContextTypes.DEFAULT_TYPE):
     if not update.message or not update.message.text:
         return
-    
+
     chat_type = update.message.chat.type
     is_private = chat_type == "private"
-    
+
     # Новое: проверка на реплай боту
     is_reply_to_bot = (
-        not is_private 
-        and update.message.reply_to_message 
-        and update.message.reply_to_message.from_user.id == context.bot.id
+            not is_private
+            and update.message.reply_to_message
+            and update.message.reply_to_message.from_user.id == context.bot.id
     )
 
     # Обновлённое условие для групп
     if not is_private and not is_reply_to_bot:
         if not context.bot.username:
             return
-            
+
         bot_username = context.bot.username.lower()
         message_text = update.message.text.lower()
-        
+
         # Проверяем И @mention ИЛИ реплай
         if f"@{bot_username}" not in message_text.split():  # ← Сохраняем старую проверку
             return  # Но теперь is_reply_to_bot уже обработан выше
@@ -289,47 +337,52 @@ async def handle_mention(update: Update, context: ContextTypes.DEFAULT_TYPE):
     chat_id = update.message.chat.id
     user_id = update.effective_user.id
     memory_key = (chat_id, user_id)
-    
+
     if memory_key not in chat_memories:
         chat_memories[memory_key] = []
-    
+
     chat_memories[memory_key].append(update.message.text)
-    
+
     context_messages = "\n".join(chat_memories[memory_key])
     prompt = (
         f"Context (last messages):\n{context_messages}\n\n"
         f"New message: {update.message.text}\n\n"
         "Отвечай уверенно (макс. 3 предложения)"
     )
-    
-    response = await call_deepseek(prompt, update)
+
+    payload = build_prompt(chat_id, prompt, chat_modes[chat_id])
+    response = await call_deepseek(payload)
     await update.message.reply_text(response)
+
 
 async def handle_reply(update: Update, context: ContextTypes.DEFAULT_TYPE):
     if not update.message.reply_to_message.from_user.id == context.bot.id:
         return
-    
+
     chat_id = update.message.chat.id
     user_id = update.effective_user.id
     memory_key = (chat_id, user_id)
-    
+
     chat_memories[memory_key].append(update.message.text)
-    
+
     context_messages = "\n".join(chat_memories[memory_key])
     prompt = f"Context:\n{context_messages}\n\nReply to: {update.message.text}"
-    
-    await update.message.reply_text(await call_deepseek(prompt, update))
+
+    payload = build_prompt(chat_id, prompt, chat_modes[chat_id])
+    response = await call_deepseek(payload)
+    await update.message.reply_text(response)
 
 
 async def handle_file(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    
-        # IMMEDIATELY skip all photo-type documents
+    # IMMEDIATELY skip all photo-type documents
     # if update.message.photo or (update.message.document and update.message.document.mime_type.startswith('image/')):
     #     return
     if update.message.photo or (update.message.document and update.message.document.mime_type.startswith('image/')):
         await handle_image(update, context)  # Send to image handler
         return  # Exit to avoid double-processing
 
+    if os.name == 'nt':  # Только для Windows
+        os.makedirs('/tmp/', exist_ok=True)
 
     """Process ONLY PDF/DOCX/TXT/CSV files (strictly ignores images)"""
     # 1. Early exit for non-documents or images
@@ -339,13 +392,12 @@ async def handle_file(update: Update, context: ContextTypes.DEFAULT_TYPE):
     if update.message.photo:
         return  # handle_image() will catch this
 
-    if (update.message.document 
-        and update.message.document.mime_type.startswith('image/')
-        and not update.message.photo):
+    if (update.message.document
+            and update.message.document.mime_type.startswith('image/')
+            and not update.message.photo):
         await handle_image(update, context)  # Force-process as image
         return
 
-    
     # 2. Validate file type
     ALLOWED_EXTENSIONS = [".pdf", ".docx", ".txt", ".csv"]
     try:
@@ -361,7 +413,7 @@ async def handle_file(update: Update, context: ContextTypes.DEFAULT_TYPE):
     # 3. Download and process
     progress_msg = await update.message.reply_text("📥 Загружаю файл...")
     file_path = f"/tmp/{int(time.time())}_{update.message.document.file_name}"
-    
+
     try:
         # NEW: Retry download up to 3 times
         for attempt in range(3):
@@ -393,7 +445,7 @@ async def handle_file(update: Update, context: ContextTypes.DEFAULT_TYPE):
             # text = extract_text(file_path)
             # if not text.strip():
             #     await progress_msg.edit_text("🤷‍♂️ PDF пустой или только картинки.")
-            #     return 
+            #     return
 
             from pdfminer.high_level import extract_text
             try:
@@ -413,14 +465,19 @@ async def handle_file(update: Update, context: ContextTypes.DEFAULT_TYPE):
         if not text.strip():
             await progress_msg.edit_text("🤷‍♂️ Файл пустой или нечитаемый.")
             return
-            
-        summary = await call_deepseek(f"Резюме документа (3 предложения):\n{text}", update)
+
+        payload = build_prompt(
+            chat_id=update.message.chat.id,
+            user_input=f"Резюме документа (3 предложения):\n{text}",
+            persona_name=chat_modes[update.message.chat.id]
+        )
+        summary = await call_deepseek(payload)
         await progress_msg.edit_text(f"📄 Вывод:\n{summary[:1000]}")  # Truncate long output
 
     except Exception as e:
         logger.error(f"FILE ERROR: {str(e)}", exc_info=True)
         await progress_msg.edit_text("💥 Ошибка обработки. Попробуй другой файл.")
-        
+
     finally:
         if os.path.exists(file_path):
             os.remove(file_path)
@@ -431,29 +488,32 @@ async def handle_image(update: Update, context: ContextTypes.DEFAULT_TYPE):
     if not update.message.photo:
         await update.message.reply_text("Это не изображение.")
         return
-    
+
     try:
         # Get image
         photo_file = await update.message.photo[-1].get_file()
         photo_bytes = BytesIO()
         await photo_file.download_to_memory(out=photo_bytes)
         base64_image = base64.b64encode(photo_bytes.getvalue()).decode('utf-8')
-        
+
         # Get user's question
         user_question = (
-            update.message.caption or 
-            (update.message.reply_to_message.text if update.message.reply_to_message else None) or
-            "Опиши это изображение. "  # Default
+                update.message.caption or
+                (update.message.reply_to_message.text if update.message.reply_to_message else None) or
+                "Опиши это изображение. "  # Default
         )
-        
+
         # Build prompt
-        if chat_modes[update.message.chat.id] == BotMode.VOLODYA:
-            prompt_text = f"Как психолог Володя, ответь: '{user_question}'. Дай саркастичный анализ. Начинай с 'Как специалист скажу...'"
-        else:
-            prompt_text = f"Ответь на вопрос: '{user_question}'. (3 предложения)"
-        
+        persona = Persona(chat_modes[update.message.chat.id])  # Получаем текущую персону
+        persona_config = PERSONAS[persona]  # Берем её конфиг
+
+        prompt_text = (
+            f"{persona_config['system']}\n\n"  # Описание стиля персоны
+            f"Запрос: {user_question}\n\n"
+            "Ответь в своём стиле (макс. 3 предложения)"
+        )
         # Process
-        processing_msg = await update.message.reply_text(" Проверяю")
+        processing_msg = await update.message.reply_text("Разглядываю")
         response = openai_client.chat.completions.create(
             model="gpt-4o-mini",
             messages=[{
@@ -471,27 +531,28 @@ async def handle_image(update: Update, context: ContextTypes.DEFAULT_TYPE):
             }],
             max_tokens=250
         )
-        
+
         # Send result
         analysis = response.choices[0].message.content
         await processing_msg.edit_text(analysis[:1000])
-        
+
     except Exception as e:
         logger.error(f"Image error: {e}")
         await update.message.reply_text("Чёт не вышло. Попробуй другую картинку.")
+
 
 async def group_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
     # Check for either @mention OR reply-to-bot
     bot_username = context.bot.username.lower()
     is_reply_to_bot = (
-        update.message.reply_to_message and 
-        update.message.reply_to_message.from_user.id == context.bot.id
+            update.message.reply_to_message and
+            update.message.reply_to_message.from_user.id == context.bot.id
     )
     has_mention = (
-        (update.message.text and f"@{bot_username}" in update.message.text.lower()) or
-        (update.message.caption and f"@{bot_username}" in update.message.caption.lower())
+            (update.message.text and f"@{bot_username}" in update.message.text.lower()) or
+            (update.message.caption and f"@{bot_username}" in update.message.caption.lower())
     )
-    
+
     if not (is_reply_to_bot or has_mention):
         return  # Ignore normal group messages
 
@@ -501,10 +562,17 @@ async def group_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
     elif update.message.document:
         await handle_file(update, context)
     else:
-        await handle_mention(update, context)  
+        # === ЕДИНСТВЕННОЕ ИЗМЕНЕНИЕ ===
+        payload = build_prompt(
+            chat_id=update.message.chat.id,
+            user_input=update.message.text,
+            persona_name=chat_modes[update.message.chat.id]
+        )
+        response = await call_deepseek(payload)
+        await update.message.reply_text(response)
+    # --------------------------------------
 
 
-# --------------------------------------
 # REGISTER ALL COMMANDS
 # --------------------------------------
 commands = [
