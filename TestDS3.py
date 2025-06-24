@@ -263,7 +263,7 @@ def build_prompt(
         ],
         "temperature": persona["temperature"],
         "max_tokens": 700,
-        "frequency_penalty": 1
+        "frequency_penalty": 0.5,
     }
 
 
@@ -347,7 +347,7 @@ async def handle_mention(update: Update, context: ContextTypes.DEFAULT_TYPE):
     prompt = (
         f"Context (last messages):\n{context_messages}\n\n"
         f"New message: {update.message.text}\n\n"
-        "Отвечай уверенно (макс. 5 предложений)"
+        "Отвечай в своем стиле (макс. 5 предложений)"
     )
 
     payload = build_prompt(chat_id, prompt, chat_modes[chat_id])
