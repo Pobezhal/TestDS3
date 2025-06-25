@@ -14,7 +14,7 @@ class Persona(Enum):
     MAMKA = "mamka"
     BOMJ = "bomj"
     ROBOT = "robot"
-    KGB - "kgb"
+    KGB = "kgb"
     
 
 PERSONAS = {
