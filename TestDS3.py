@@ -96,7 +96,11 @@ def decay_hooks(hooks: dict) -> dict:
     """Decays manual hooks and clears dynamic ones"""
     return {
         **{k: max(0, v - 0.3) for k, v in hooks.items() if k != "dynamic_hooks"},  # Manual decay
-        **{"dynamic_hooks": []}  # Reset dynamic
+        **{"dynamic_hooks": [
+            {"theme": h["theme"], "weight": max(0, h["weight"] - 0.1)} 
+            for h in hooks.get("dynamic_hooks", [])
+            if h["weight"] >= 0.2  # Remove weak hooks
+        ]}
     }
 
 async def set_mode(update: Update, context: ContextTypes.DEFAULT_TYPE):
@@ -473,11 +477,10 @@ async def handle_mention(update: Update, context: ContextTypes.DEFAULT_TYPE):
     })
 
     # 8. Apply decay (modified)
-    persona_ctx["user_hooks"] = {
-        k: max(0, v - 0.3)
-        for k, v in persona_ctx["user_hooks"].items()
-        if v >= 0.5  # Keep only active hooks
-    }
+    persona_ctx.update(decay_hooks({
+        **persona_ctx["user_hooks"],
+        **{"dynamic_hooks": persona_ctx.get("dynamic_hooks", [])}
+    }))
 
     await update.message.reply_text(response)
 
