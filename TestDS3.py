@@ -651,7 +651,7 @@ async def handle_image(update: Update, context: ContextTypes.DEFAULT_TYPE):
         prompt_text = (
             f"{persona_config['system']}\n\n"
             f"Запрос: {user_question}\n\n"
-            "Ответь в своём стиле (макс. 5 предложения). Удели мнимание деталям изображения."
+            "Ответь в своём стиле (макс. 5 предложений). Удели мнимание деталям изображения."
         )
 
         processing_msg = await update.message.reply_text("Разглядываю")
