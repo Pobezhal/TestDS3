@@ -311,7 +311,7 @@ def build_prompt(
                     f"СОСТОЯНИЕ: {mood}\n"
                     f"РУЧНЫЕ ТРИГГЕРЫ: {', '.join(active_hooks) if active_hooks else 'нет'}\n"
                     f"АВТОТЕМЫ: {', '.join(dynamic_hooks) if dynamic_hooks else 'нет'}\n"
-                    f"ИСТОРИЯ:\n{history_str[-750:]}"  # Reduced from 800 to fit dynamic hooks
+                    f"ИСТОРИЯ:\n{history_str[-850:]}"  # Reduced from 800 to fit dynamic hooks
                 )
             },
             {
@@ -580,12 +580,21 @@ async def handle_file(update: Update, context: ContextTypes.DEFAULT_TYPE):
             return
 
         # Generate summary (existing)
-        payload = build_prompt(
-            chat_id=chat_id,
-            user_input=f"Резюме документа (3 предложения):\n{text}",
-            persona_name=current_persona.value,
-            user_id=user_id  # NEW: Added user_id
-        )
+        persona_config = PERSONAS[current_persona]
+        payload = {
+            "model": "deepseek-chat",
+            "messages": [
+                {  # 4-space indent
+                    "role": "system",
+                    "content": persona_config["system"]
+                },
+                {
+                    "role": "user",
+                    "content": f"Резюме документа (5 предложений):\n{text}"
+                }
+            ],
+            "max_tokens": 700
+        }
         summary = await call_deepseek(payload)
 
         # NEW: Store bot response
@@ -642,7 +651,7 @@ async def handle_image(update: Update, context: ContextTypes.DEFAULT_TYPE):
         prompt_text = (
             f"{persona_config['system']}\n\n"
             f"Запрос: {user_question}\n\n"
-            "Ответь в своём стиле (макс. 3 предложения)"
+            "Ответь в своём стиле (макс. 5 предложения). Удели мнимание деталям изображения."
         )
 
         processing_msg = await update.message.reply_text("Разглядываю")
