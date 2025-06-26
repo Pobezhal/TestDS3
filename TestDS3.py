@@ -2,6 +2,9 @@
 import asyncio  # Добавить в начале файла
 
 from pathlib import Path
+import json  # <-- Add this line
+
+from telegram import Update
 import time
 from telegram.ext import Application, CommandHandler, MessageHandler, filters, ContextTypes
 from telegram import Update
@@ -90,8 +93,11 @@ DEEPSEEK_HEADERS = {
 # --------------------------------------
 
 def decay_hooks(hooks: dict) -> dict:
-    return {k: (v - 0.5 if v >= 3 else v) for k, v in hooks.items()}
-
+    """Decays manual hooks and clears dynamic ones"""
+    return {
+        **{k: max(0, v - 0.3) for k, v in hooks.items() if k != "dynamic_hooks"},  # Manual decay
+        **{"dynamic_hooks": []}  # Reset dynamic
+    }
 
 async def set_mode(update: Update, context: ContextTypes.DEFAULT_TYPE):
     chat_id = update.message.chat.id
@@ -270,19 +276,26 @@ def build_prompt(
         {"message_history": deque(maxlen=32), "user_hooks": {}, "sentiment": 0.0}
     )
 
-    # Format history with sender/persona tags
+    # Format history with sender tags
     history_str = "\n".join(
         f"{msg['sender']} ({msg.get('persona', 'user')}): {msg['text']}"
         for msg in context["message_history"]
     )
 
-    # Get active hooks (user-only, min 2 triggers)
+    # 1. Manual hooks (existing)
     active_hooks = [f"{k}({v})" for k, v in context["user_hooks"].items() if v >= 2]
 
-    # NEW: Dynamic mood detection
-    mood = "🔥 АГРЕССИВНЫЙ" if context.get("sentiment", 0) < -0.3 else \
-        "😊 ДОВОЛЬНЫЙ" if context.get("sentiment", 0) > 0.3 else \
-            "😐 НЕЙТРАЛЬНЫЙ"
+    # 2. Dynamic hooks (new)
+    dynamic_hooks = [
+        f"{h['theme']}({h['weight']:.1f})"
+        for h in context.get("dynamic_hooks", [])
+        if h["weight"] >= 0.5
+    ][:2]  # Limit to top 2
+
+    # 3. Sentiment (existing)
+    mood = "🔥 АГРЕССИВНЫЙ" if context.get("sentiment", 0) < -0.5 else \
+           "😊 ДОВОЛЬНЫЙ" if context.get("sentiment", 0) > 0.5 else \
+           "😐 НЕЙТРАЛЬНЫЙ"
 
     return {
         "model": "deepseek-chat",
@@ -291,9 +304,10 @@ def build_prompt(
                 "role": "system",
                 "content": (
                     f"{persona['system']}\n\n"
-                    f"СОСТОЯНИЕ ПОЛЬЗОВАТЕЛЯ: {mood}\n"  # Injected here
-                    f"ТРИГГЕРЫ: {', '.join(active_hooks) if active_hooks else 'нет'}\n"
-                    f"ПОСЛЕДНИЕ СООБЩЕНИЯ:\n{history_str[-800:]}"
+                    f"СОСТОЯНИЕ: {mood}\n"
+                    f"РУЧНЫЕ ТРИГГЕРЫ: {', '.join(active_hooks) if active_hooks else 'нет'}\n"
+                    f"АВТОТЕМЫ: {', '.join(dynamic_hooks) if dynamic_hooks else 'нет'}\n"
+                    f"ИСТОРИЯ:\n{history_str[-750:]}"  # Reduced from 800 to fit dynamic hooks
                 )
             },
             {
@@ -305,7 +319,6 @@ def build_prompt(
         "max_tokens": 700,
         "frequency_penalty": 1
     }
-
 
 async def call_deepseek(payload: dict) -> str:
     """Call DeepSeek API with nuclear-grade quote prevention"""
@@ -347,6 +360,47 @@ async def call_deepseek(payload: dict) -> str:
 # GROUP MENTION HANDLER (SPECIAL CASE)
 # --------------------------------------
 
+async def extract_dynamic_hooks(message_history: deque) -> list[dict]:
+    """Extracts top 3 recurring themes using DeepSeek"""
+    if len(message_history) < 3:  # Minimum context
+        return []
+
+    try:
+        context = "\n".join(
+            f"{msg['sender'][0].upper()}: {msg['text']}"
+            for msg in list(message_history)[-5:]  # Last 5 messages
+        )
+
+        payload = {
+            "model": "deepseek-chat",
+            "messages": [
+                {
+                    "role": "system",
+                    "content": """Analyze messages for recurring themes. Return JSON:
+                    {"themes": [{"theme": "topic", "weight": 0.0-1.0}]}
+                    Rules:
+                    1. Only include themes mentioned >1 times
+                    2. Skip names
+                    3. Return max 3 themes"""
+                },
+                {"role": "user", "content": f"Messages:\n{context}\nKey themes:"}
+            ],
+            "temperature": 0.3,
+            "response_format": {"type": "json_object"}
+        }
+
+        response = requests.post(DEEPSEEK_API_URL, headers=DEEPSEEK_HEADERS, json=payload, timeout=20)
+        response.raise_for_status()
+
+        themes = json.loads(response.json()['choices'][0]['message']['content']).get("themes", [])
+        return [
+            {"theme": t["theme"].lower(), "weight": min(max(t["weight"], 0.1), 0.9)}
+            for t in sorted(themes, key=lambda x: -x["weight"])[:3]  # Top 3 by weight
+        ]
+
+    except Exception as e:
+        logger.error(f"Hook extraction failed: {e}")
+        return []
 
 async def handle_mention(update: Update, context: ContextTypes.DEFAULT_TYPE):
     if not update.message or not update.message.text:
@@ -357,45 +411,58 @@ async def handle_mention(update: Update, context: ContextTypes.DEFAULT_TYPE):
     current_persona = Persona(chat_modes.get(chat_id, "normal"))
     text = update.message.text
 
-    # 1. Load or create persona context
-    persona_ctx = persona_contexts.setdefault(
-        (chat_id, user_id, current_persona.value),
-        {
-            "message_history": deque(maxlen=32),
-            "user_hooks": {},
-            "sentiment": 0.0
-        }
-    )
+    # 1. Load or create context
+    persona_ctx = switch_persona(chat_id, user_id, current_persona)
+    persona_ctx.setdefault("msg_counter", 0)
+    persona_ctx["msg_counter"] += 1
 
-    # 2. Update hooks from user message (raw counts)
+    # 2. Update manual hooks (existing)
     for trigger in PERSONA_HOOKS.get(current_persona, []):
         if any(trigger in word.lower() for word in text.split()):
             persona_ctx["user_hooks"][trigger] = persona_ctx["user_hooks"].get(trigger, 0) + 1
 
-    # 3. Decay ONLY hooks that reached threshold (>=3)
-    persona_ctx["user_hooks"] = {
-        k: (v - 0.5 if v >= 3 else v)  # Halve if mature, else preserve
-        for k, v in persona_ctx["user_hooks"].items()
-    }
+    #3. Dynamic hooks analysis
+    if persona_ctx["msg_counter"] % 3 == 0:  # <-- No .env check needed
+        try:
+            persona_ctx["dynamic_hooks"] = await extract_dynamic_hooks(persona_ctx["message_history"])
+            logger.info(f"Dynamic Hooks Updated: {persona_ctx['dynamic_hooks']}")
+        except Exception as e:
+            logger.warning(f"Dynamic Hooks Failed: {e}")
 
-    # 4. Store message with metadata
+    # 4. Update sentiment (existing)
+    def get_sentiment(text: str) -> float:
+        """Returns sentiment polarity (-1 to 1) for English, 0 for non-English"""
+        if any(cyr_char in text.lower() for cyr_char in 'абвгдеёжзийклмнопрстуфхцчшщъыьэюя'):
+            logger.debug(f"Skipping sentiment analysis for Russian text: '{text}'")
+            return 0.0
+        blob = TextBlob(text)
+        polarity = blob.sentiment.polarity
+        return polarity
+
+    persona_ctx["sentiment"] = get_sentiment(text)
+    mood = "😊 POSITIVE" if persona_ctx["sentiment"] > 0.3 else \
+        "🔥 NEGATIVE" if persona_ctx["sentiment"] < -0.3 else \
+            "😐 NEUTRAL"
+
+
+
+
+    # 5. Store message
     persona_ctx["message_history"].append({
         "text": text,
         "sender": "user",
         "persona": None
     })
 
-    # 5. Prepare active hooks (ONLY those >=2 to influence response)
-    active_hooks = [k for k, v in persona_ctx["user_hooks"].items() if v >= 2]
-    hook_context = f"[User Triggers: {', '.join(active_hooks)}]\n" if active_hooks else ""
-
     # 6. Generate response
     payload = build_prompt(
         chat_id=chat_id,
-        user_input=f"{hook_context}{text}",
+        user_input=text,
         persona_name=current_persona.value,
         user_id=user_id
     )
+
+
     response = await call_deepseek(payload)
 
     # 7. Store bot response
@@ -404,6 +471,13 @@ async def handle_mention(update: Update, context: ContextTypes.DEFAULT_TYPE):
         "sender": "bot",
         "persona": current_persona.value
     })
+
+    # 8. Apply decay (modified)
+    persona_ctx["user_hooks"] = {
+        k: max(0, v - 0.3)
+        for k, v in persona_ctx["user_hooks"].items()
+        if v >= 0.5  # Keep only active hooks
+    }
 
     await update.message.reply_text(response)
 
