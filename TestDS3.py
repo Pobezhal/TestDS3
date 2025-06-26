@@ -20,13 +20,45 @@ from enum import Enum, auto
 import base64
 from io import BytesIO
 from openai import OpenAI
-
+from textblob import TextBlob
+from persona_hooks import PERSONA_HOOKS
 import sys
 
-chat_memories = defaultdict(lambda: deque(maxlen=32))
+#chat_memories = defaultdict(lambda: deque(maxlen=32))
+persona_contexts = defaultdict(dict)
+
+
+
+
+
+# def switch_persona(chat_id: int, user_id: int, new_persona: Persona) -> dict:
+#     key = (chat_id, user_id, new_persona.value)
+#     if key not in persona_contexts:
+#         persona_contexts[key] = {
+#             "message_history": deque(maxlen=32),
+#             "hooks": {},
+#             "sentiment": 0.0
+#         }
+#     return persona_contexts[key]  # Всегда возвращает контекст
+
+def switch_persona(chat_id: int, user_id: int, new_persona: Persona) -> dict:
+    key = (chat_id, user_id, new_persona.value)
+    if key not in persona_contexts:
+        persona_contexts[key] = {
+            "message_history": deque(maxlen=32),
+            "user_hooks": {},  # Changed from "hooks" to "user_hooks"
+            "bot_hooks": {},   # Added to match handle_mention
+            "sentiment": 0.0
+        }
+    return persona_contexts[key]
+
 
 # Load tokens
 load_dotenv()
+
+
+
+
 
 
 print("OPENAI_KEY_EXISTS:", "OPENAI_API_KEY" in os.environ)  # Debug line
@@ -57,20 +89,27 @@ DEEPSEEK_HEADERS = {
 # EXACT FUNCTIONS FROM YOUR LIST (NO MORE, NO LESS)
 # --------------------------------------
 
+def decay_hooks(hooks: dict) -> dict:
+    return {k: (v - 0.5 if v >= 3 else v) for k, v in hooks.items()}
+
+
 async def set_mode(update: Update, context: ContextTypes.DEFAULT_TYPE):
     chat_id = update.message.chat.id
+    user_id = update.effective_user.id  # <- ДОБАВЛЕНО для работы с persona_contexts
+
     if not context.args:
-        await update.message.reply_text("Доступные режимы: normal, good, phil")
+        await update.message.reply_text("Доступные режимы:\n" + "\n".join([f"- {p.value}" for p in Persona]))
         return
 
     mode_name = context.args[0].lower()
     try:
-        persona = Persona(mode_name)  # Пытаемся найти в enum
-        chat_modes[chat_id] = persona.value  # Сохраняем строку (normal/volodia/etc)
+        persona = Persona(mode_name)
+        # ДОБАВЛЕНО: Создаем/загружаем контекст новой персоны
+        switch_persona(chat_id, user_id, persona)  # <- НОВАЯ СТРОКА
+        chat_modes[chat_id] = persona.value
         await update.message.reply_text(f"🔹 Режим '{persona.value}' включён")
     except ValueError:
         await update.message.reply_text("❌ Неизвестный режим. Доступные: " + ", ".join([p.value for p in Persona]))
-
 
 async def news(update: Update, context: ContextTypes.DEFAULT_TYPE):
     chat_id = update.message.chat.id
@@ -223,47 +262,48 @@ def build_prompt(
         chat_id: int,
         user_input: str,
         persona_name: str,
-        chat_history: deque = None
+        user_id: int = None
 ) -> dict:
-    """
-    Собирает payload для DeepSeek API.
-
-    Args:
-        chat_id: ID чата (для истории)
-        user_input: Текст сообщения пользователя
-        persona_name: Один из Persona (normal, volodia и т.д.)
-        chat_history: Очередь с историей сообщений (если None - берет из chat_memories)
-
-    Returns:
-        Готовый payload для call_deepseek
-    """
-    # Получаем персонажа
-    persona = PERSONAS.get(Persona(persona_name), PERSONAS[Persona.NORMAL])  # fallback на normal
-
-    # Берем историю чата (если не передана явно)
-    history = chat_history if chat_history is not None else chat_memories[chat_id]
-
-    # Форматируем историю
-    formatted_history = "\n".join(
-        f"{i}. {msg}" for i, msg in enumerate(history, 1)
-    ) if history else "Истории нет"
-
-    # Собираем system-промпт
-    system_prompt = persona["system"].format(
-        chat_history=formatted_history,
-        user_input=user_input
+    persona = PERSONAS.get(Persona(persona_name), PERSONAS[Persona.NORMAL])
+    context = persona_contexts.get(
+        (chat_id, user_id, persona_name),
+        {"message_history": deque(maxlen=32), "user_hooks": {}, "sentiment": 0.0}
     )
 
-    # Возвращаем готовый payload
+    # Format history with sender/persona tags
+    history_str = "\n".join(
+        f"{msg['sender']} ({msg.get('persona', 'user')}): {msg['text']}"
+        for msg in context["message_history"]
+    )
+
+    # Get active hooks (user-only, min 2 triggers)
+    active_hooks = [f"{k}({v})" for k, v in context["user_hooks"].items() if v >= 2]
+
+    # NEW: Dynamic mood detection
+    mood = "🔥 АГРЕССИВНЫЙ" if context.get("sentiment", 0) < -0.3 else \
+        "😊 ДОВОЛЬНЫЙ" if context.get("sentiment", 0) > 0.3 else \
+            "😐 НЕЙТРАЛЬНЫЙ"
+
     return {
         "model": "deepseek-chat",
         "messages": [
-            {"role": "system", "content": system_prompt},
-            {"role": "user", "content": user_input}
+            {
+                "role": "system",
+                "content": (
+                    f"{persona['system']}\n\n"
+                    f"СОСТОЯНИЕ ПОЛЬЗОВАТЕЛЯ: {mood}\n"  # Injected here
+                    f"ТРИГГЕРЫ: {', '.join(active_hooks) if active_hooks else 'нет'}\n"
+                    f"ПОСЛЕДНИЕ СООБЩЕНИЯ:\n{history_str[-800:]}"
+                )
+            },
+            {
+                "role": "user",
+                "content": user_input
+            }
         ],
         "temperature": persona["temperature"],
         "max_tokens": 700,
-        "frequency_penalty": 0.5,
+        "frequency_penalty": 1
     }
 
 
@@ -307,53 +347,65 @@ async def call_deepseek(payload: dict) -> str:
 # GROUP MENTION HANDLER (SPECIAL CASE)
 # --------------------------------------
 
+
 async def handle_mention(update: Update, context: ContextTypes.DEFAULT_TYPE):
     if not update.message or not update.message.text:
         return
 
-    chat_type = update.message.chat.type
-    is_private = chat_type == "private"
-
-    # Новое: проверка на реплай боту
-    is_reply_to_bot = (
-            not is_private
-            and update.message.reply_to_message
-            and update.message.reply_to_message.from_user.id == context.bot.id
-    )
-
-    # Обновлённое условие для групп
-    if not is_private and not is_reply_to_bot:
-        if not context.bot.username:
-            return
-
-        bot_username = context.bot.username.lower()
-        message_text = update.message.text.lower()
-
-        # Проверяем И @mention ИЛИ реплай
-        if f"@{bot_username}" not in message_text.split():  # ← Сохраняем старую проверку
-            return  # Но теперь is_reply_to_bot уже обработан выше
-
-    # Существующая логика обработки (без изменений)
     chat_id = update.message.chat.id
     user_id = update.effective_user.id
-    memory_key = (chat_id, user_id)
+    current_persona = Persona(chat_modes.get(chat_id, "normal"))
+    text = update.message.text
 
-    if memory_key not in chat_memories:
-        chat_memories[memory_key] = []
-
-    chat_memories[memory_key].append(update.message.text)
-
-    context_messages = "\n".join(chat_memories[memory_key])
-    prompt = (
-        f"Context (last messages):\n{context_messages}\n\n"
-        f"New message: {update.message.text}\n\n"
-        "Отвечай в своем стиле (макс. 5 предложений)"
+    # 1. Load or create persona context
+    persona_ctx = persona_contexts.setdefault(
+        (chat_id, user_id, current_persona.value),
+        {
+            "message_history": deque(maxlen=32),
+            "user_hooks": {},
+            "sentiment": 0.0
+        }
     )
 
-    payload = build_prompt(chat_id, prompt, chat_modes[chat_id])
-    response = await call_deepseek(payload)
-    await update.message.reply_text(response)
+    # 2. Update hooks from user message (raw counts)
+    for trigger in PERSONA_HOOKS.get(current_persona, []):
+        if any(trigger in word.lower() for word in text.split()):
+            persona_ctx["user_hooks"][trigger] = persona_ctx["user_hooks"].get(trigger, 0) + 1
 
+    # 3. Decay ONLY hooks that reached threshold (>=3)
+    persona_ctx["user_hooks"] = {
+        k: (v - 0.5 if v >= 3 else v)  # Halve if mature, else preserve
+        for k, v in persona_ctx["user_hooks"].items()
+    }
+
+    # 4. Store message with metadata
+    persona_ctx["message_history"].append({
+        "text": text,
+        "sender": "user",
+        "persona": None
+    })
+
+    # 5. Prepare active hooks (ONLY those >=2 to influence response)
+    active_hooks = [k for k, v in persona_ctx["user_hooks"].items() if v >= 2]
+    hook_context = f"[User Triggers: {', '.join(active_hooks)}]\n" if active_hooks else ""
+
+    # 6. Generate response
+    payload = build_prompt(
+        chat_id=chat_id,
+        user_input=f"{hook_context}{text}",
+        persona_name=current_persona.value,
+        user_id=user_id
+    )
+    response = await call_deepseek(payload)
+
+    # 7. Store bot response
+    persona_ctx["message_history"].append({
+        "text": response,
+        "sender": "bot",
+        "persona": current_persona.value
+    })
+
+    await update.message.reply_text(response)
 
 async def handle_reply(update: Update, context: ContextTypes.DEFAULT_TYPE):
     if not update.message.reply_to_message.from_user.id == context.bot.id:
@@ -361,44 +413,31 @@ async def handle_reply(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
     chat_id = update.message.chat.id
     user_id = update.effective_user.id
-    memory_key = (chat_id, user_id)
+    current_persona = Persona(chat_modes.get(chat_id, "normal"))
 
-    chat_memories[memory_key].append(update.message.text)
+    # Use structured history instead of chat_memories
+    persona_ctx = switch_persona(chat_id, user_id, current_persona)
+    persona_ctx["message_history"].append({
+        "text": update.message.text,
+        "sender": "user",
+        "persona": None
+    })
 
-    context_messages = "\n".join(chat_memories[memory_key])
-    prompt = f"Context:\n{context_messages}\n\nReply to: {update.message.text}"
-
-    payload = build_prompt(chat_id, prompt, chat_modes[chat_id])
+    payload = build_prompt(
+        chat_id=chat_id,
+        user_input=update.message.text,
+        persona_name=current_persona.value,
+        user_id=user_id
+    )
     response = await call_deepseek(payload)
     await update.message.reply_text(response)
 
-
 async def handle_file(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    # IMMEDIATELY skip all photo-type documents
-    # if update.message.photo or (update.message.document and update.message.document.mime_type.startswith('image/')):
-    #     return
     if update.message.photo or (update.message.document and update.message.document.mime_type.startswith('image/')):
-        await handle_image(update, context)  # Send to image handler
-        return  # Exit to avoid double-processing
-
-    if os.name == 'nt':  # Только для Windows
-        os.makedirs('/tmp/', exist_ok=True)
-
-    """Process ONLY PDF/DOCX/TXT/CSV files (strictly ignores images)"""
-    # 1. Early exit for non-documents or images
-    if not update.message.document:
-        return  # Let other handlers process it
-
-    if update.message.photo:
-        return  # handle_image() will catch this
-
-    if (update.message.document
-            and update.message.document.mime_type.startswith('image/')
-            and not update.message.photo):
-        await handle_image(update, context)  # Force-process as image
+        await handle_image(update, context)
         return
 
-    # 2. Validate file type
+    # Validate file type (existing)
     ALLOWED_EXTENSIONS = [".pdf", ".docx", ".txt", ".csv"]
     try:
         file_ext = os.path.splitext(update.message.document.file_name)[1].lower()
@@ -410,12 +449,11 @@ async def handle_file(update: Update, context: ContextTypes.DEFAULT_TYPE):
         await update.message.reply_text("❌ Только PDF/DOCX/TXT/CSV.")
         return
 
-    # 3. Download and process
+    # Download (existing)
     progress_msg = await update.message.reply_text("📥 Загружаю файл...")
     file_path = f"/tmp/{int(time.time())}_{update.message.document.file_name}"
 
     try:
-        # NEW: Retry download up to 3 times
         for attempt in range(3):
             try:
                 telegram_file = await update.message.document.get_file()
@@ -431,48 +469,56 @@ async def handle_file(update: Update, context: ContextTypes.DEFAULT_TYPE):
                     return
                 await asyncio.sleep(1)
 
-        # NEW: Validate DOCX structure before processing
-        if file_ext == ".docx":
-            from zipfile import ZipFile
-            with ZipFile(file_path) as z:
-                if 'word/document.xml' not in z.namelist():
-                    await progress_msg.edit_text("❌ Файл DOCX повреждён.")
-                    return
-        # Parse content
+        # NEW: Load persona context
+        chat_id = update.message.chat.id
+        user_id = update.effective_user.id
+        current_persona = Persona(chat_modes.get(chat_id, "normal"))
+        persona_ctx = switch_persona(chat_id, user_id, current_persona)
+
+        # NEW: Store file metadata
+        persona_ctx["message_history"].append({
+            "text": f"[File: {update.message.document.file_name}]",
+            "sender": "user",
+            "persona": None
+        })
+
+        # Parse content (existing)
         text = ""
         if file_ext == ".pdf":
-            # from pdfminer.high_level import extract_text
-            # text = extract_text(file_path)
-            # if not text.strip():
-            #     await progress_msg.edit_text("🤷‍♂️ PDF пустой или только картинки.")
-            #     return
-
-            from pdfminer.high_level import extract_text
             try:
-                text = extract_text(file_path)  # Let it fail naturally
+                text = extract_text(file_path)
             except Exception as e:
                 logger.error(f"PDF Error: {e}")
-                await progress_msg.edit_text("🤖 Не смог прочитать PDF (попробуй другой файл)")
+                await progress_msg.edit_text("🤖 Не смог прочитать PDF")
                 return
         elif file_ext == ".docx":
-            from docx import Document
             doc = Document(file_path)
             text = "\n".join(p.text for p in doc.paragraphs if p.text)
         elif file_ext in (".txt", ".csv"):
             with open(file_path, "r", encoding="utf-8") as f:
-                text = f.read(3000)  # Limit read for large files
+                text = f.read(3000)
 
         if not text.strip():
             await progress_msg.edit_text("🤷‍♂️ Файл пустой или нечитаемый.")
             return
 
+        # Generate summary (existing)
         payload = build_prompt(
-            chat_id=update.message.chat.id,
+            chat_id=chat_id,
             user_input=f"Резюме документа (3 предложения):\n{text}",
-            persona_name=chat_modes[update.message.chat.id]
+            persona_name=current_persona.value,
+            user_id=user_id  # NEW: Added user_id
         )
         summary = await call_deepseek(payload)
-        await progress_msg.edit_text(f"📄 Вывод:\n{summary[:1000]}")  # Truncate long output
+
+        # NEW: Store bot response
+        persona_ctx["message_history"].append({
+            "text": summary,
+            "sender": "bot",
+            "persona": current_persona.value
+        })
+
+        await progress_msg.edit_text(f"📄 Вывод:\n{summary[:1000]}")
 
     except Exception as e:
         logger.error(f"FILE ERROR: {str(e)}", exc_info=True)
@@ -484,38 +530,47 @@ async def handle_file(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
 
 async def handle_image(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    """Handle images with custom user prompts"""
     if not update.message.photo:
         await update.message.reply_text("Это не изображение.")
         return
 
     try:
-        # Get image
+        # --- Original Image Processing (UNTOUCHED) ---
         photo_file = await update.message.photo[-1].get_file()
         photo_bytes = BytesIO()
         await photo_file.download_to_memory(out=photo_bytes)
         base64_image = base64.b64encode(photo_bytes.getvalue()).decode('utf-8')
 
-        # Get user's question
         user_question = (
-                update.message.caption or
-                (update.message.reply_to_message.text if update.message.reply_to_message else None) or
-                "Опиши это изображение. "  # Default
+            update.message.caption or
+            (update.message.reply_to_message.text if update.message.reply_to_message else None) or
+            "Опиши это изображение. "
         )
 
-        # Build prompt
-        persona = Persona(chat_modes[update.message.chat.id])  # Получаем текущую персону
-        persona_config = PERSONAS[persona]  # Берем её конфиг
+        # --- NEW: Structured Memory Integration ---
+        chat_id = update.message.chat.id
+        user_id = update.effective_user.id
+        current_persona = Persona(chat_modes.get(chat_id, "normal"))  # Your original persona logic
+        persona_ctx = switch_persona(chat_id, user_id, current_persona)
 
+        # Store image event (formatted to match your style)
+        persona_ctx["message_history"].append({
+            "text": f"[Image: {user_question}]",
+            "sender": "user",
+            "persona": None
+        })
+
+        # --- Your Original API Call (EXACTLY AS IS) ---
+        persona_config = PERSONAS[current_persona]
         prompt_text = (
-            f"{persona_config['system']}\n\n"  # Описание стиля персоны
+            f"{persona_config['system']}\n\n"
             f"Запрос: {user_question}\n\n"
             "Ответь в своём стиле (макс. 3 предложения)"
         )
-        # Process
+
         processing_msg = await update.message.reply_text("Разглядываю")
         response = openai_client.chat.completions.create(
-            model="gpt-4o-mini",
+            model="gpt-4o-mini",  # YOUR ORIGINAL MODEL - NOT CHANGED
             messages=[{
                 "role": "user",
                 "content": [
@@ -524,22 +579,27 @@ async def handle_image(update: Update, context: ContextTypes.DEFAULT_TYPE):
                         "type": "image_url",
                         "image_url": {
                             "url": f"data:image/jpeg;base64,{base64_image}",
-                            "detail": "low"
+                            "detail": "low"  # Your original detail level
                         }
                     }
                 ]
             }],
-            max_tokens=250
+            max_tokens=250  # Your original token limit
         )
 
-        # Send result
+        # --- NEW: Store Bot Response ---
         analysis = response.choices[0].message.content
-        await processing_msg.edit_text(analysis[:1000])
+        persona_ctx["message_history"].append({
+            "text": analysis,
+            "sender": "bot",
+            "persona": current_persona.value
+        })
+
+        await processing_msg.edit_text(analysis[:1000])  # Your original truncation
 
     except Exception as e:
         logger.error(f"Image error: {e}")
         await update.message.reply_text("Чёт не вышло. Попробуй другую картинку.")
-
 
 async def group_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
     # Check for either @mention OR reply-to-bot
@@ -556,6 +616,10 @@ async def group_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
     if not (is_reply_to_bot or has_mention):
         return  # Ignore normal group messages
 
+    chat_id = update.message.chat.id
+    user_id = update.effective_user.id
+
+
     # Route to appropriate handler
     if update.message.photo:
         await handle_image(update, context)
@@ -564,10 +628,11 @@ async def group_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
     else:
         # === ЕДИНСТВЕННОЕ ИЗМЕНЕНИЕ ===
         payload = build_prompt(
-            chat_id=update.message.chat.id,
+            chat_id=chat_id,
             user_input=update.message.text,
-            persona_name=chat_modes[update.message.chat.id]
-        )
+            persona_name=chat_modes[chat_id],
+            user_id=user_id)
+
         response = await call_deepseek(payload)
         await update.message.reply_text(response)
     # --------------------------------------
