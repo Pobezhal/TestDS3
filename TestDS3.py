@@ -465,7 +465,7 @@ async def handle_mention(update: Update, context: ContextTypes.DEFAULT_TYPE):
         persona_name=current_persona.value,
         user_id=user_id
     )
-
+    logger.info("PROMPT:\n%s", json.dumps(payload, indent=2, ensure_ascii=False)) 
 
     response = await call_deepseek(payload)
 
