@@ -311,7 +311,7 @@ def build_prompt(
                     f"СОСТОЯНИЕ: {mood}\n"
                     f"РУЧНЫЕ ТРИГГЕРЫ: {', '.join(active_hooks) if active_hooks else 'нет'}\n"
                     f"АВТОТЕМЫ: {', '.join(dynamic_hooks) if dynamic_hooks else 'нет'}\n"
-                    f"ИСТОРИЯ:\n{history_str[-850:]}"  # Reduced from 800 to fit dynamic hooks
+                    f"ИСТОРИЯ:\n{history_str[-1000:]}"  # Reduced from 800 to fit dynamic hooks
                 )
             },
             {
