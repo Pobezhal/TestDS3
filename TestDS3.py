@@ -656,7 +656,7 @@ async def handle_image(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
         processing_msg = await update.message.reply_text("Разглядываю")
         response = openai_client.chat.completions.create(
-            model="gpt-4o-mini",  # YOUR ORIGINAL MODEL - NOT CHANGED
+            model="gpt-4o",  # YOUR ORIGINAL MODEL - NOT CHANGED
             messages=[{
                 "role": "user",
                 "content": [
