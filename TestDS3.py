@@ -7,7 +7,7 @@ import json  # <-- Add this line
 from telegram import Update
 import time
 from telegram.ext import Application, CommandHandler, MessageHandler, filters, ContextTypes
-from telegram import Update
+from telegram import Update, Message, Chat, User
 from pdfminer.high_level import extract_text  # Для PDF
 from docx import Document  # Для DOCX
 import requests
@@ -429,7 +429,7 @@ async def handle_mention(update: Update, context: ContextTypes.DEFAULT_TYPE):
     if persona_ctx["msg_counter"] % 3 == 0:  # <-- No .env check needed
         try:
             persona_ctx["dynamic_hooks"] = await extract_dynamic_hooks(persona_ctx["message_history"])
-            logger.info(f"Dynamic Hooks Updated: {persona_ctx['dynamic_hooks']}")
+            logger.info(f"Dynamic Hooks Updated")
         except Exception as e:
             logger.warning(f"Dynamic Hooks Failed: {e}")
 
@@ -685,7 +685,39 @@ async def handle_image(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
     except Exception as e:
         logger.error(f"Image error: {e}")
-        await update.message.reply_text("Чёт не вышло. Попробуй другую картинку.")
+        await update.message.reply_text("Не вышло. Попробуй другую картинку.")
+
+async def handle_voice(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    try:
+        # 1. Get voice and transcribe
+        voice_file = await update.message.voice.get_file()
+        voice_bytes = BytesIO()
+        await voice_file.download_to_memory(out=voice_bytes)
+        user_text = openai_client.audio.transcriptions.create(
+            model="whisper-1",
+            file=("voice.ogg", voice_bytes.getvalue())
+        ).text.strip()
+
+        if not user_text:
+            await update.message.reply_text("🔇 Пустое сообщение")
+            return
+
+        # 2. Convert voice message to text message
+        msg = update.message
+        msg._unfreeze()
+        msg.text = user_text
+        msg.voice = None
+        msg._freeze()
+
+        # 3. Process as text
+        handler = handle_mention if msg.chat.type == "private" else group_handler
+        await handler(update, context)
+
+    except Exception as e:
+        logger.error(f"Voice error: {e}")
+        await update.message.reply_text(" Ошибка обработки")
+
+
 
 async def group_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
     # Check for either @mention OR reply-to-bot
