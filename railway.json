@@ -17,8 +17,8 @@
         "libjpeg",
         "zlib",
         "tesseract-ocr",
-        "ffmpeg",        // Critical for voice processing
-        "libopus0"       // Required for Telegram voice decoding
+        "ffmpeg",        
+        "libopus0"       
       ],
       "installCommand": "pip install --no-cache-dir -r requirements.txt"
     }
