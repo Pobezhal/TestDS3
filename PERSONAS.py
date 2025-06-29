@@ -3,18 +3,22 @@
 from enum import Enum
 
 
+
 class Persona(Enum):
     NORMAL = "normal"
     GOOD = "good"
     PHIL = "phil"
+    BAD = "bad"
     VOLODYA = "volodya"
     SOLD = "sold"
+    CLOWN = "clown"
     SCUF = "scuf"
+    DVACH = "dvach"
+    MAMKA = "mamka"
     BOMJ = "bomj"
     ROBOT = "robot"
     KGB = "kgb"
     DEF = "def"
-
 
 PERSONAS = {
     Persona.BAD: {
