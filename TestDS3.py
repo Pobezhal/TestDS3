@@ -358,6 +358,28 @@ async def call_deepseek(payload: dict) -> str:
         return "Поддержка уже работает над проблемой... Позвоните в OpenAI."  # Старый фолбек
 
 
+
+async def call_ai(payload: dict) -> str:
+    """DeepSeek with silent OpenAI fallback"""
+    try:
+        # Try DeepSeek first
+        response = requests.post(
+            DEEPSEEK_API_URL,
+            headers=DEEPSEEK_HEADERS,
+            json=payload,
+            timeout=14
+        ).json()
+        return response['choices'][0]['message']['content'].strip()
+
+    except Exception as e:
+        # Log fallback but hide it from users
+        logger.error(f"DeepSeek failed ({type(e).__name__}), falling back to OpenAI")
+        resp = openai_client.chat.completions.create(
+            model="gpt-4o-mini",
+            messages=payload["messages"],
+            max_tokens=600
+        )
+        return resp.choices[0].message.content
     # --------------------------------------
 
 
@@ -465,7 +487,7 @@ async def handle_mention(update: Update, context: ContextTypes.DEFAULT_TYPE):
     )
 
 
-    response = await call_deepseek(payload)
+    response = await call_ai(payload)
 
     # 7. Store bot response
     persona_ctx["message_history"].append({
@@ -504,7 +526,7 @@ async def handle_reply(update: Update, context: ContextTypes.DEFAULT_TYPE):
         persona_name=current_persona.value,
         user_id=user_id
     )
-    response = await call_deepseek(payload)
+    response = await call_ai(payload)
     await update.message.reply_text(response)
 
 async def handle_file(update: Update, context: ContextTypes.DEFAULT_TYPE):
@@ -749,7 +771,7 @@ async def group_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
             persona_name=chat_modes[chat_id],
             user_id=user_id)
 
-        response = await call_deepseek(payload)
+        response = await call_ai(payload)
         await update.message.reply_text(response)
     # --------------------------------------
 
