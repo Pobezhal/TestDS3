@@ -797,6 +797,8 @@ app.add_handler(MessageHandler(
     handle_reply
 ))
 
+app.add_handler(MessageHandler(filters.VOICE, handle_voice))
+
 if __name__ == "__main__":
     print("⚡ Helper запущен с точным набором функций")
     app.run_polling()
