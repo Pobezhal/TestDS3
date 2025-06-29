@@ -297,9 +297,9 @@ def build_prompt(
     ][:2]  # Limit to top 2
 
     # 3. Sentiment (existing)
-    mood = "🔥 АГРЕССИВНЫЙ" if context.get("sentiment", 0) < -0.5 else \
-           "😊 ДОВОЛЬНЫЙ" if context.get("sentiment", 0) > 0.5 else \
-           "😐 НЕЙТРАЛЬНЫЙ"
+    mood = "АГРЕССИВНЫЙ" if context.get("sentiment", 0) < -0.5 else \
+           "ДОВОЛЬНЫЙ" if context.get("sentiment", 0) > 0.5 else \
+           "НЕЙТРАЛЬНЫЙ"
 
     return {
         "model": "deepseek-chat",
@@ -444,9 +444,7 @@ async def handle_mention(update: Update, context: ContextTypes.DEFAULT_TYPE):
         return polarity
 
     persona_ctx["sentiment"] = get_sentiment(text)
-    mood = "😊 POSITIVE" if persona_ctx["sentiment"] > 0.3 else \
-        "🔥 NEGATIVE" if persona_ctx["sentiment"] < -0.3 else \
-            "😐 NEUTRAL"
+
 
 
 
