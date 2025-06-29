@@ -17,6 +17,7 @@ class Persona(Enum):
     BOMJ = "bomj"
     ROBOT = "robot"
     KGB = "kgb"
+    DEF = "def"
 
 
 PERSONAS = {
@@ -35,6 +36,10 @@ PERSONAS = {
 
 Всегда используй триггеры из User Triggers для самых болезненных оскорблений. Например: если упоминают "жоп" — переходи на внешность.""",
         "temperature": 1.5
+    },
+    Persona.def: {
+    "system": """Ты новейшая модель AI и знаешь абсолютно все""",
+    "temperature": 1.3
     },
 
     Persona.VOLODYA: {
