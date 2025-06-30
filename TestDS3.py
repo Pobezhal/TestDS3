@@ -3,7 +3,7 @@ import asyncio  # Добавить в начале файла
 
 from pathlib import Path
 import json  # <-- Add this line
-
+import httpx
 from telegram import Update
 import time
 from telegram.ext import Application, CommandHandler, MessageHandler, filters, ContextTypes
@@ -121,28 +121,52 @@ async def set_mode(update: Update, context: ContextTypes.DEFAULT_TYPE):
     except ValueError:
         await update.message.reply_text("❌ Неизвестный режим. Доступные: " + ", ".join([p.value for p in Persona]))
 
+# async def news(update: Update, context: ContextTypes.DEFAULT_TYPE):
+#     chat_id = update.message.chat.id
+#     persona_config = PERSONAS[Persona(chat_modes[chat_id])]
+
+#     payload = {
+#         "model": "deepseek-chat",
+#         "messages": [
+#             {
+#                 "role": "system",
+#                 "content": persona_config["system"]
+#             },
+#             {
+#                 "role": "user",
+#                 "content": "Как Владимир Жириновский, энергично (4-5 предложений) изложи ОДНУ свежую политическую новость из Америки или Европы, встроив саркастичный/едкий комментарий прямо в текст. Формат: [Факт новости], [циничный анализ]. [Ещё один факт], [язвительное замечание]"
+#             }
+#         ],
+#         "temperature": persona_config["temperature"]
+#     }
+
+#     response = await call_deepseek(payload)
+#     await update.message.reply_text(response[:700])
+
 async def news(update: Update, context: ContextTypes.DEFAULT_TYPE):
     chat_id = update.message.chat.id
     persona_config = PERSONAS[Persona(chat_modes[chat_id])]
 
-    payload = {
-        "model": "deepseek-chat",
-        "messages": [
-            {
-                "role": "system",
-                "content": persona_config["system"]
-            },
-            {
-                "role": "user",
-                "content": "Как Владимир Жириновский, энергично (4-5 предложений) изложи ОДНУ свежую политическую новость из Америки или Европы, встроив саркастичный/едкий комментарий прямо в текст. Формат: [Факт новости], [циничный анализ]. [Ещё один факт], [язвительное замечание]"
-            }
-        ],
-        "temperature": persona_config["temperature"]
-    }
+    user_prompt = (
+        "Как Владимир Жириновский, выдай ОДНУ свежую политическую новость (США/Европа)встроив саркастичный/едкий комментарий прямо в текст.\n"
+        "Формат **без скобок**, но строго:\n"
+        "1. Факт новости — твой циничный анализ двумя предложениями.\n"
+        "2. Дополнительный факт — язвительная шутка.\n"
+        "Правила:\n"
+        "- Никаких ссылок.\n"
+        "- Только  сарказм и гиперболы. Пиши как пьяный Жириновский в ток-шоу!\n"
+        "- Финал с угрозой\n"
+        ""
+    )
 
-    response = await call_deepseek(payload)
-    await update.message.reply_text(response[:700])
+    # Optionally: retrieve previous_response_id if you're tracking it
+    response_text, _ = await call_openai(
+        input_text=user_prompt,
+        system_prompt=persona_config["system"],
+        temperature=persona_config["temperature"]
+    )
 
+    await update.message.reply_text(response_text[:700])
 
 async def wtf(update: Update, context: ContextTypes.DEFAULT_TYPE):
     chat_id = update.message.chat.id
@@ -380,6 +404,56 @@ async def call_ai(payload: dict) -> str:
             max_tokens=600
         )
         return resp.choices[0].message.content
+
+
+async def call_openai(input_text: str, system_prompt: str, temperature: float = 0.7, previous_response_id: str = None):
+    headers = {
+        "Authorization": f"Bearer {os.getenv('OPENAI_API_KEY')}",
+        "Content-Type": "application/json",
+    }
+
+    payload = {
+        "model": "gpt-4o",
+        "input": [
+            {"role": "system", "content": system_prompt},
+            {"role": "user", "content": input_text},
+        ],
+        "temperature": temperature,
+        "store": True,
+        "tools": [{"type": "web_search_preview"}],
+    }
+
+    if previous_response_id:
+        payload["previous_response_id"] = previous_response_id
+
+    async with httpx.AsyncClient(timeout=20.0) as client:
+        response = await client.post(
+            "https://api.openai.com/v1/responses",
+            headers=headers,
+            json=payload,
+        )
+
+    response.raise_for_status()
+    data = response.json()
+
+    # Extract message text from the output
+    output = data.get("output", [])
+    message_obj = next((item for item in output if item.get("type") == "message"), None)
+    if not message_obj:
+        raise ValueError("No message found in response output")
+
+    content_list = message_obj.get("content", [])
+    text_entry = next((c for c in content_list if "text" in c), None)
+    if not text_entry:
+        raise ValueError("No text found in message content")
+
+    response_text = text_entry["text"]
+    response_id = data.get("id")
+
+    return response_text, response_id
+
+
+
     # --------------------------------------
 
 
