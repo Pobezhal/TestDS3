@@ -162,7 +162,7 @@ async def news(update: Update, context: ContextTypes.DEFAULT_TYPE):
     # Optionally: retrieve previous_response_id if you're tracking it
     response_text, _ = await call_openai(
         input_text=user_prompt,
-        system_prompt=persona_config["system"],
+        system_prompt="Отвечай как Жириновский",
         temperature=persona_config["temperature"]
     )
 
