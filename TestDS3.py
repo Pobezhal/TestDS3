@@ -165,7 +165,10 @@ async def news(update: Update, context: ContextTypes.DEFAULT_TYPE):
         system_prompt="Отвечай как Жириновский",
         temperature=persona_config["temperature"]
     )
-
+    persona_ctx = switch_persona(chat_id, update.effective_user.id, Persona(chat_modes[chat_id]))
+    persona_ctx["message_history"].append(
+        {"text": response_text, "sender": "bot", "persona": chat_modes[chat_id]})
+        
     await update.message.reply_text(response_text[:700])
 
 async def wtf(update: Update, context: ContextTypes.DEFAULT_TYPE):
