@@ -413,7 +413,7 @@ async def call_openai(input_text: str, system_prompt: str, temperature: float = 
     }
 
     payload = {
-        "model": "gpt-4o",
+        "model": "gpt-4o-mini",
         "input": [
             {"role": "system", "content": system_prompt},
             {"role": "user", "content": input_text},
