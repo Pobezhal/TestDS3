@@ -169,7 +169,7 @@ async def news(update: Update, context: ContextTypes.DEFAULT_TYPE):
     persona_ctx["message_history"].append(
         {"text": response_text, "sender": "bot", "persona": chat_modes[chat_id]})
         
-    await update.message.reply_text(response_text[:700])
+    await update.message.reply_text(response_text[:800])
 
 async def wtf(update: Update, context: ContextTypes.DEFAULT_TYPE):
     chat_id = update.message.chat.id
