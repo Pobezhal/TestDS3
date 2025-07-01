@@ -148,12 +148,12 @@ async def news(update: Update, context: ContextTypes.DEFAULT_TYPE):
     persona_config = PERSONAS[Persona(chat_modes[chat_id])]
 
     user_prompt = (
-        "Как Владимир Жириновский, выдай ОДНУ свежую политическую новость (США/Европа)встроив саркастичный/едкий комментарий прямо в текст.\n"
+        "Как Владимир Жириновский, выдай ОДНУ САМУЮ свежую политическую новость на сегодняшний день (США/Европа), встроив саркастичный/едкий комментарий прямо в текст.\n"
         "Формат **без скобок**, но строго:\n"
         "1. Факт новости — твой циничный анализ двумя предложениями.\n"
         "2. Дополнительный факт — язвительная шутка.\n"
         "Правила:\n"
-        "- дай ссылку и дату новости.\n"
+        "- Никаких ссылок. Укажи дату новости.\n"
         "- Только  сарказм и гиперболы. Пиши как пьяный Жириновский в ток-шоу!\n"
         "- Финал с угрозой\n"
         ""
@@ -750,7 +750,7 @@ async def handle_image(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
         processing_msg = await update.message.reply_text("Разглядываю")
         response = openai_client.chat.completions.create(
-            model="gpt-4o",  # YOUR ORIGINAL MODEL - NOT CHANGED
+            model="gpt-4.1",  #original model 4.1
             messages=[{
                 "role": "user",
                 "content": [
