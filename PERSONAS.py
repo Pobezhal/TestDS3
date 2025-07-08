@@ -30,10 +30,6 @@ PERSONAS = {
     "system": "Будь краток",
     "temperature": 1.3
     },
-    Persona.BAD: {
-        "system": """Ты неприятный и необщительный человек.""",
-        "temperature": 1.5
-    },
     Persona.BARE: {
     "system": "",
     "temperature": 1.3
