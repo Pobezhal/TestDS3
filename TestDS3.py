@@ -148,21 +148,19 @@ async def news(update: Update, context: ContextTypes.DEFAULT_TYPE):
     persona_config = PERSONAS[Persona(chat_modes[chat_id])]
 
     user_prompt = (
-        f"Как Владимир Жириновский, выдай ОДНУ САМУЮ свежую политическую новость на сегодняшний день ({datetime.now().strftime("%d.%m.%Y")})  (США/Европа), встроив саркастичный/едкий комментарий прямо в текст.\n"
-        "Формат **без скобок**, но строго:\n"
-        "1. Факт новости — твой циничный анализ двумя предложениями.\n"
-        "2. Дополнительный факт — язвительная шутка.\n"
-        "Правила:\n"
-        "- Дай ссылку. Никаких списков и пунктов! Можно абзацы. Укажи дату новости.\n"
-        "- Только ругань,сарказм и гиперболы. Пиши как пьяный Жириновский в ток-шоу!\n"
-        "- Финал с угрозой\n"
-        ""
+    f"Give ONE recent breakthrough in AI or space exploration ({datetime.now().strftime('%d.%m.%Y')}).\n"
+    "Structure:\n"
+    "1. Core fact (include source/date via [Markdown](link)).\n"
+    "2. 1-sentence significance/context.\n"
+    "Rules:\n"
+    "- Neutral tone, max 2 paragraphs\n"
+    "- Prioritize: LLMs, robotics, NASA/ESA/SpaceX missions\n"
+    "- No jokes/editorializing\n"
     )
-
     # Optionally: retrieve previous_response_id if you're tracking it
     response_text, _ = await call_openai(
         input_text=user_prompt,
-        system_prompt="Отвечай как Жириновский",
+        system_prompt="",
         temperature=persona_config["temperature"]
     )
     persona_ctx = switch_persona(chat_id, update.effective_user.id, Persona(chat_modes[chat_id]))
