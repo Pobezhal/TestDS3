@@ -1,24 +1,30 @@
 {
   "deploy": {
     "startCommand": "python -u TestDS3.py",
-    "restartPolicyType": "ALWAYS",
+    "restartPolicyType": "ALWAYS", 
     "startTimeout": 180,
     "variables": {
       "BOT_TOKEN": "${{BOT_TOKEN}}",
       "DEEPSEEK_API_KEY": "${{DEEPSEEK_API_KEY}}",
       "OPENAI_API_KEY": "${{OPENAI_API_KEY}}",
-      "PYTHONUNBUFFERED": "1"
+      "PYTHONUNBUFFERED": "1",
+      "TESSDATA_PREFIX": "/usr/share/tesseract-ocr/4.00/tessdata" 
     }
   },
   "build": {
     "nixpacks": {
       "packages": [
         "poppler-utils",
-        "libjpeg",
+        "libjpeg", 
         "zlib",
         "tesseract-ocr",
-        "ffmpeg",        
-        "libopus0"       
+        "tesseract-ocr-rus",  # Russian language pack
+        "tesseract-ocr-eng",  # English language pack
+        "ffmpeg",
+        "libopus0",
+        "libsm6",
+        "libxext6",
+        "libgl1" 
       ],
       "installCommand": "pip install --no-cache-dir -r requirements.txt"
     }
