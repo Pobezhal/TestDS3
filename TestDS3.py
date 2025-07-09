@@ -1,5 +1,10 @@
 # not a malicious thing, just a bot to make fun of my close friends!!
 import asyncio  # Добавить в начале файла
+import pytesseract
+from pdf2image import convert_from_path
+from PIL import Image
+import pandas as pd
+from pptx import Presentation
 from datetime import datetime
 from pathlib import Path
 import json  # <-- Add this line
@@ -605,109 +610,196 @@ async def handle_reply(update: Update, context: ContextTypes.DEFAULT_TYPE):
     await update.message.reply_text(response)
 
 async def handle_file(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    if update.message.photo or (update.message.document and update.message.document.mime_type.startswith('image/')):
-        await handle_image(update, context)
+    # Initialize variables
+    text = ""
+    file_ext = os.path.splitext(update.message.document.file_name)[1].lower()
+
+    # 1. File size check (20MB max)
+    if update.message.document.file_size > 20_000_000:
+        await update.message.reply_text("❌ Max 20MB")
         return
 
-    # Validate file type (existing)
-    ALLOWED_EXTENSIONS = [".pdf", ".docx", ".txt", ".csv"]
-    try:
-        file_ext = os.path.splitext(update.message.document.file_name)[1].lower()
-    except AttributeError:
-        await update.message.reply_text("❌ Не могу определить тип файла.")
-        return
-
+    # 2. Supported extensions
+    ALLOWED_EXTENSIONS = [".pdf", ".docx", ".txt", ".csv", ".xlsx", ".pptx"]
     if file_ext not in ALLOWED_EXTENSIONS:
-        await update.message.reply_text("❌ Только PDF/DOCX/TXT/CSV.")
+        await update.message.reply_text(f"❌ Only {', '.join(ALLOWED_EXTENSIONS)}")
         return
 
-    # Download (existing)
-    progress_msg = await update.message.reply_text("📥 Загружаю файл...")
+    # 3. Download file
+    progress_msg = await update.message.reply_text("📥 Downloading...")
     file_path = f"/tmp/{int(time.time())}_{update.message.document.file_name}"
-
     try:
-        for attempt in range(3):
-            try:
-                telegram_file = await update.message.document.get_file()
-                await telegram_file.download_to_drive(custom_path=file_path)
-                if os.path.exists(file_path) and os.path.getsize(file_path) > 0:
-                    break
-                elif attempt == 2:
-                    await progress_msg.edit_text("💥 Файл не скачался.")
-                    return
-            except Exception as e:
-                if attempt == 2:
-                    await progress_msg.edit_text("💥 Ошибка загрузки.")
-                    return
-                await asyncio.sleep(1)
+        telegram_file = await update.message.document.get_file()
+        await telegram_file.download_to_drive(custom_path=file_path)
 
-        # NEW: Load persona context
-        chat_id = update.message.chat.id
-        user_id = update.effective_user.id
-        current_persona = Persona(chat_modes.get(chat_id, "normal"))
-        persona_ctx = switch_persona(chat_id, user_id, current_persona)
-
-        # NEW: Store file metadata
-        persona_ctx["message_history"].append({
-            "text": f"[File: {update.message.document.file_name}]",
-            "sender": "user",
-            "persona": None
-        })
-
-        # Parse content (existing)
-        text = ""
+        # 4. Extract text (ALL FILE TYPES INCLUDED)
         if file_ext == ".pdf":
-            try:
-                text = extract_text(file_path)
-            except Exception as e:
-                logger.error(f"PDF Error: {e}")
-                await progress_msg.edit_text("🤖 Не смог прочитать PDF")
-                return
+            text = extract_text(file_path)
+            if not text.strip():
+                images = convert_from_path(file_path)
+                text = "\n".join(pytesseract.image_to_string(img, lang='rus+eng') for img in images)
         elif file_ext == ".docx":
             doc = Document(file_path)
             text = "\n".join(p.text for p in doc.paragraphs if p.text)
+        elif file_ext == ".xlsx":
+            df = pd.read_excel(file_path, engine='openpyxl')
+            text = df.to_string()
+        elif file_ext == ".pptx":
+            prs = Presentation(file_path)
+            text = "\n".join(shape.text for slide in prs.slides for shape in slide.shapes if hasattr(shape, "text"))
         elif file_ext in (".txt", ".csv"):
             with open(file_path, "r", encoding="utf-8") as f:
-                text = f.read(3000)
+                text = f.read(12000)
 
         if not text.strip():
-            await progress_msg.edit_text("🤷‍♂️ Файл пустой или нечитаемый.")
+            await progress_msg.edit_text("🤷‍♂️ Empty/unreadable file")
             return
 
-        # Generate summary (existing)
-        persona_config = PERSONAS[current_persona]
-        payload = {
-            "model": "deepseek-chat",
-            "messages": [
-                {  # 4-space indent
-                    "role": "system",
-                    "content": persona_config["system"]
-                },
-                {
-                    "role": "user",
-                    "content": f"Резюме документа (5 предложений):\n{text}"
-                }
-            ],
-            "max_tokens": 700
-        }
-        summary = await call_deepseek(payload)
+        # 5. Store raw text for queries
+        context.user_data['last_file_raw'] = text[:12000]
+        context.user_data['file_timestamp'] = time.time()
 
-        # NEW: Store bot response
+        # 6. Generate response with TIMEOUTS
+        user_question = update.message.caption or "Резюме документа (5 предложений)"
+        prompt = f"""
+        File content:
+        {text[:12000]}
+
+        Question: {user_question}
+        """
+
+        response = None
+        try:
+            # Try DeepSeek with 15s timeout
+            response = await asyncio.wait_for(
+                call_deepseek({
+                    "model": "deepseek-chat",
+                    "messages": [{"role": "user", "content": prompt}],
+                    "temperature": 0.3
+                }),
+                timeout=30.0
+            )
+        except (asyncio.TimeoutError, Exception):
+            try:
+                # Fallback to OpenAI with 10s timeout
+                response = await asyncio.wait_for(
+                    asyncio.get_event_loop().run_in_executor(
+                        None,
+                        lambda: openai_client.chat.completions.create(
+                            model="gpt-4o-mini",
+                            messages=[{"role": "user", "content": prompt}],
+                            temperature=0.3,
+                            timeout=20.0
+                        ).choices[0].message.content
+                    ),
+                    timeout=12.0
+                )
+            except Exception as e:
+                logger.error(f"AI Timeout: {e}")
+                await progress_msg.edit_text("⌛ AI timeout. Try again.")
+                return
+
+        # 7. Update persona
+        chat_id = update.message.chat.id
+        persona_ctx = switch_persona(chat_id, update.effective_user.id, Persona(chat_modes[chat_id]))
         persona_ctx["message_history"].append({
-            "text": summary,
+            "text": response,
             "sender": "bot",
-            "persona": current_persona.value
+            "persona": chat_modes[chat_id]
         })
 
-        await progress_msg.edit_text(f"📄 Вывод:\n{summary[:1000]}")
+        await progress_msg.edit_text(response[:1200])
 
     except Exception as e:
-        logger.error(f"FILE ERROR: {str(e)}", exc_info=True)
-        await progress_msg.edit_text("💥 Ошибка обработки. Попробуй другой файл.")
+        logger.error(f"FILE ERROR: {e}")
+        await progress_msg.edit_text("💥 Processing error")
 
     finally:
         if os.path.exists(file_path):
             os.remove(file_path)
+
+
+async def handle_file_query(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    # 1. Check for file keywords (файл/в файле) or reply to bot's file summary
+    query = update.message.text.lower()
+    is_reply_to_bot = (
+            update.message.reply_to_message and
+            update.message.reply_to_message.from_user.id == context.bot.id
+    )
+
+    # Corrected condition
+    if not any(trigger in query for trigger in ["файл", "в файле"]) and not is_reply_to_bot:
+        logger.debug(f"Not a file query: '{query}'")
+        await handle_mention(update, context)
+        return
+
+    # Rest of the function remains the same...
+    # 2. Verify file exists and is fresh (30min TTL)
+    if 'last_file_raw' not in context.user_data:
+        logger.warning("File query attempted but no file loaded")
+        await update.message.reply_text("❌ Файл не загружен")
+        return
+
+    file_age = time.time() - context.user_data.get('file_timestamp', 0)
+    if file_age > 1800:
+        logger.warning(f"File data expired ({file_age // 60} minutes old)")
+        await update.message.reply_text("❌ Данные устарели (30+ минут)")
+        return
+
+    # 3. Prepare and log the prompt
+    file_preview = context.user_data['last_file_raw'][:10000]
+    full_prompt = f"Файл:\n{file_preview}\n\nВопрос: {update.message.text}"
+
+    # Log only the essential parts
+    logger.info("📄 FILE QUERY TRIGGERED")
+    logger.info(f"Trigger: {'keywords' if not is_reply_to_bot else 'reply to bot'}")
+    logger.info(f"User query: {update.message.text}")
+    logger.info(f"File preview (first 100 chars): {file_preview[:100]}...")
+    logger.info(f"Full prompt length: {len(full_prompt)} chars")
+
+    # 4. Process with AI
+    try:
+        # Try DeepSeek first
+        try:
+            logger.debug("Attempting DeepSeek API call")
+            payload = {
+                "model": "deepseek-chat",
+                "messages": [{
+                    "role": "system",
+                    "content": "Отвечай ТОЛЬКО на основе файла:"
+                }, {
+                    "role": "user",
+                    "content": full_prompt
+                }],
+                "temperature": 0.3
+            }
+            response = await asyncio.wait_for(call_deepseek(payload), timeout=25)
+        except Exception as e:
+            logger.warning(f"DeepSeek failed ({type(e).__name__}), falling back to OpenAI")
+            response = await asyncio.wait_for(
+                asyncio.get_event_loop().run_in_executor(
+                    None,
+                    lambda: openai_client.chat.completions.create(
+                        model="gpt-4o-mini",
+                        messages=[{
+                            "role": "system",
+                            "content": "Ответь строго по файлу:"
+                        }, {
+                            "role": "user",
+                            "content": full_prompt
+                        }],
+                        temperature=0.3
+                    ).choices[0].message.content
+                ),
+                timeout=25
+            )
+
+        await update.message.reply_text(response[:1000])
+        logger.info("✅ File query processed successfully")
+
+    except Exception as e:
+        logger.error(f"File query processing failed: {e}")
+        await update.message.reply_text("💥 Ошибка обработки запроса")
 
 
 async def handle_image(update: Update, context: ContextTypes.DEFAULT_TYPE):
@@ -871,6 +963,17 @@ commands = [
 
 for cmd, handler in commands:
     app.add_handler(CommandHandler(cmd, handler))
+
+
+#file query handler
+app.add_handler(MessageHandler(
+    filters.TEXT & ~filters.COMMAND,
+    lambda update, ctx: (
+        handle_file_query(update, ctx) if 'last_file_raw' in ctx.user_data else
+        handle_mention(update, ctx)
+    )
+))
+
 
 # ===== 1. PRIVATE CHAT HANDLER (keep) =====
 app.add_handler(MessageHandler(
