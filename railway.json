@@ -18,8 +18,8 @@
         "libjpeg", 
         "zlib",
         "tesseract-ocr",
-        "tesseract-ocr-rus",  # Russian language pack
-        "tesseract-ocr-eng",  # English language pack
+        "tesseract-ocr-rus", 
+        "tesseract-ocr-eng",  
         "ffmpeg",
         "libopus0",
         "libsm6",
