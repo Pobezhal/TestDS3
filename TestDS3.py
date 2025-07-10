@@ -710,6 +710,11 @@ async def handle_file(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
         await progress_msg.edit_text(response[:1200])
 
+        context.user_data.update({
+            'last_file_message_id': update.message.message_id,
+            'is_file_context': True
+        })
+
     except Exception as e:
         logger.error(f"FILE ERROR: {e}")
         await progress_msg.edit_text("💥 Processing error")
@@ -720,20 +725,19 @@ async def handle_file(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
 
 async def handle_file_query(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    # 1. Check for file keywords (файл/в файле) or reply to bot's file summary
+    # 1. Check triggers
     query = update.message.text.lower()
-    is_reply_to_bot = (
-            update.message.reply_to_message and
-            update.message.reply_to_message.from_user.id == context.bot.id
+    is_reply_to_file_summary = (
+        update.message.reply_to_message and
+        update.message.reply_to_message.from_user.id == context.bot.id and
+        update.message.reply_to_message.message_id == context.user_data.get('last_file_message_id')
     )
 
-    # Corrected condition
-    if not any(trigger in query for trigger in ["файл", "в файле"]) and not is_reply_to_bot:
-        logger.debug(f"Not a file query: '{query}'")
+    if not any(trigger in query for trigger in ["файл", "в файле"]) and not is_reply_to_file_summary:
+        logger.debug(f"Not a file query: '{query}' (reply_to_file={is_reply_to_file_summary})")
         await handle_mention(update, context)
         return
 
-    # Rest of the function remains the same...
     # 2. Verify file exists and is fresh (30min TTL)
     if 'last_file_raw' not in context.user_data:
         logger.warning("File query attempted but no file loaded")
@@ -742,63 +746,37 @@ async def handle_file_query(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
     file_age = time.time() - context.user_data.get('file_timestamp', 0)
     if file_age > 1800:
-        logger.warning(f"File data expired ({file_age // 60} minutes old)")
+        logger.warning(f"File data expired ({file_age//60} minutes old)")
         await update.message.reply_text("❌ Данные устарели (30+ минут)")
         return
+
 
     # 3. Prepare and log the prompt
     file_preview = context.user_data['last_file_raw'][:10000]
     full_prompt = f"Файл:\n{file_preview}\n\nВопрос: {update.message.text}"
-
-    # Log only the essential parts
     logger.info("📄 FILE QUERY TRIGGERED")
-    logger.info(f"Trigger: {'keywords' if not is_reply_to_bot else 'reply to bot'}")
+    logger.info(f"Trigger: {'keywords' if not is_reply_to_file_summary else 'reply to file summary'}")
     logger.info(f"User query: {update.message.text}")
-    logger.info(f"File preview (first 100 chars): {file_preview[:100]}...")
-    logger.info(f"Full prompt length: {len(full_prompt)} chars")
 
-    # 4. Process with AI
+    # 4. Process with AI (minimal system prompt)
     try:
-        # Try DeepSeek first
-        try:
-            logger.debug("Attempting DeepSeek API call")
-            payload = {
-                "model": "deepseek-chat",
-                "messages": [{
-                    "role": "system",
-                    "content": "Отвечай ТОЛЬКО на основе файла:"
-                }, {
-                    "role": "user",
-                    "content": full_prompt
-                }],
-                "temperature": 0.3
-            }
-            response = await asyncio.wait_for(call_deepseek(payload), timeout=25)
-        except Exception as e:
-            logger.warning(f"DeepSeek failed ({type(e).__name__}), falling back to OpenAI")
-            response = await asyncio.wait_for(
-                asyncio.get_event_loop().run_in_executor(
-                    None,
-                    lambda: openai_client.chat.completions.create(
-                        model="gpt-4o-mini",
-                        messages=[{
-                            "role": "system",
-                            "content": "Ответь строго по файлу:"
-                        }, {
-                            "role": "user",
-                            "content": full_prompt
-                        }],
-                        temperature=0.3
-                    ).choices[0].message.content
-                ),
-                timeout=25
-            )
+        payload = {
+            "model": "deepseek-chat",
+            "messages": [{
+                "role": "system",
+                "content": "Отвечай ТОЛЬКО на основе приложенного файла. Не используй другие знания."
+            }, {
+                "role": "user",
+                "content": full_prompt
+            }],
+            "temperature": 0.3
+        }
 
+        response = await call_ai(payload)
         await update.message.reply_text(response[:1000])
-        logger.info("✅ File query processed successfully")
 
     except Exception as e:
-        logger.error(f"File query processing failed: {e}")
+        logger.error(f"File query failed: {e}")
         await update.message.reply_text("💥 Ошибка обработки запроса")
 
 
@@ -876,7 +854,7 @@ async def handle_image(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
 async def handle_voice(update: Update, context: ContextTypes.DEFAULT_TYPE):
     try:
-        # 1. Get voice and transcribe
+        # 1. Your existing transcription code
         voice_file = await update.message.voice.get_file()
         voice_bytes = BytesIO()
         await voice_file.download_to_memory(out=voice_bytes)
@@ -889,20 +867,41 @@ async def handle_voice(update: Update, context: ContextTypes.DEFAULT_TYPE):
             await update.message.reply_text("🔇 Пустое сообщение")
             return
 
-        # 2. Convert voice message to text message
+        # 2. ONLY NEW PART: Check for file queries
+        if any(trigger in user_text.lower() for trigger in ["файл", "в файле", "документ", "в документе"]):
+            if 'last_file_raw' not in context.user_data:
+                await update.message.reply_text("❌ Нет загруженного файла")
+                return
+
+            # Process as file query
+            file_content = context.user_data['last_file_raw'][:10000]
+            response = await call_ai({
+                "model": "deepseek-chat",
+                "messages": [{
+                    "role": "system",
+                    "content": "Отвечай ТОЛЬКО из файла:"
+                }, {
+                    "role": "user",
+                    "content": f"Файл:\n{file_content}\n\nВопрос: {user_text}"
+                }],
+                "temperature": 0.3
+            })
+            await update.message.reply_text(response[:1000])
+            return  # Important! Skip normal handling
+
+        # 3. Original behavior for non-file queries
         msg = update.message
         msg._unfreeze()
         msg.text = user_text
         msg.voice = None
         msg._freeze()
 
-        # 3. Process as text
         handler = handle_mention if msg.chat.type == "private" else group_handler
         await handler(update, context)
 
     except Exception as e:
         logger.error(f"Voice error: {e}")
-        await update.message.reply_text(" Ошибка обработки")
+        await update.message.reply_text("🔇 Ошибка обработки")
 
 
 
