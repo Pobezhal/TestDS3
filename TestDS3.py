@@ -965,6 +965,14 @@ for cmd, handler in commands:
     app.add_handler(CommandHandler(cmd, handler))
 
 
+
+
+# ===== 2. GROUP CHAT HANDLER (REPLACE with this) =====
+app.add_handler(MessageHandler(
+    filters.ChatType.GROUPS & (filters.TEXT | filters.PHOTO | filters.Document.ALL),
+    group_handler  # Your custom function that checks @mentions
+))
+
 #file query handler
 app.add_handler(MessageHandler(
     filters.TEXT & ~filters.COMMAND,
@@ -985,11 +993,7 @@ app.add_handler(MessageHandler(
     )
 ))
 
-# ===== 2. GROUP CHAT HANDLER (REPLACE with this) =====
-app.add_handler(MessageHandler(
-    filters.ChatType.GROUPS & (filters.TEXT | filters.PHOTO | filters.Document.ALL),
-    group_handler  # Your custom function that checks @mentions
-))
+
 
 # ===== 3. REPLY HANDLER (keep one) =====
 app.add_handler(MessageHandler(
