@@ -658,7 +658,7 @@ async def handle_file(update: Update, context: ContextTypes.DEFAULT_TYPE):
         # 5. Store raw text for queries
         context.user_data['last_file_raw'] = text[:12000]
         context.user_data['file_timestamp'] = time.time()
-        context.user_data.setdefault('is_file_context', True)
+        context.user_data.setdefault('is_file_context', True) 
         
         # 6. Generate response with TIMEOUTS
         user_question = update.message.caption or "Резюме документа (5 предложений)"
@@ -937,7 +937,7 @@ async def group_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
             user_input=update.message.text,
             persona_name=chat_modes[chat_id],
             user_id=user_id)
-        logger.info(f"Bot username: {context.bot.username}, Mention check: {has_mention}, Is reply: {is_reply_to_bot}")
+
         response = await call_ai(payload)
         await update.message.reply_text(response)
     # --------------------------------------
