@@ -4,7 +4,7 @@ from enum import Enum
 
 
 
-class Persona(Enum):
+class Persona(Enum): 
     NORMAL = "normal"
     GOOD = "good"
     PHIL = "phil"
