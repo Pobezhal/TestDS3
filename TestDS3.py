@@ -44,8 +44,7 @@ persona_contexts = defaultdict(dict)
 #     if key not in persona_contexts:
 #         persona_contexts[key] = {
 #             "message_history": deque(maxlen=32),
-#             "hooks": {},
-#             "sentiment": 0.0
+#
 #         }
 #     return persona_contexts[key]  # Всегда возвращает контекст
 
@@ -53,10 +52,7 @@ def switch_persona(chat_id: int, user_id: int, new_persona: Persona) -> dict:
     key = (chat_id, user_id, new_persona.value)
     if key not in persona_contexts:
         persona_contexts[key] = {
-            "message_history": deque(maxlen=32),
-            "user_hooks": {},  # Changed from "hooks" to "user_hooks"
-            "bot_hooks": {},   # Added to match handle_mention
-            "sentiment": 0.0
+            "message_history": deque(maxlen=24),
         }
     return persona_contexts[key]
 
@@ -97,16 +93,7 @@ DEEPSEEK_HEADERS = {
 # EXACT FUNCTIONS FROM YOUR LIST (NO MORE, NO LESS)
 # --------------------------------------
 
-def decay_hooks(hooks: dict) -> dict:
-    """Decays manual hooks and clears dynamic ones"""
-    return {
-        **{k: max(0, v - 0.3) for k, v in hooks.items() if k != "dynamic_hooks"},  # Manual decay
-        **{"dynamic_hooks": [
-            {"theme": h["theme"], "weight": max(0, h["weight"] - 0.1)} 
-            for h in hooks.get("dynamic_hooks", [])
-            if h["weight"] >= 0.2  # Remove weak hooks
-        ]}
-    }
+
 
 async def set_mode(update: Update, context: ContextTypes.DEFAULT_TYPE):
     chat_id = update.message.chat.id
@@ -126,173 +113,6 @@ async def set_mode(update: Update, context: ContextTypes.DEFAULT_TYPE):
     except ValueError:
         await update.message.reply_text("❌ Неизвестный режим. Доступные: " + ", ".join([p.value for p in Persona]))
 
-# async def news(update: Update, context: ContextTypes.DEFAULT_TYPE):
-#     chat_id = update.message.chat.id
-#     persona_config = PERSONAS[Persona(chat_modes[chat_id])]
-
-#     payload = {
-#         "model": "deepseek-chat",
-#         "messages": [
-#             {
-#                 "role": "system",
-#                 "content": persona_config["system"]
-#             },
-#             {
-#                 "role": "user",
-#                 "content": "Как Владимир Жириновский, энергично (4-5 предложений) изложи ОДНУ свежую политическую новость из Америки или Европы, встроив саркастичный/едкий комментарий прямо в текст. Формат: [Факт новости], [циничный анализ]. [Ещё один факт], [язвительное замечание]"
-#             }
-#         ],
-#         "temperature": persona_config["temperature"]
-#     }
-
-#     response = await call_deepseek(payload)
-#     await update.message.reply_text(response[:700])
-
-async def news(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    chat_id = update.message.chat.id
-    persona_config = PERSONAS[Persona(chat_modes[chat_id])]
-
-    user_prompt = (
-    f"Give ONE recent breakthrough in AI or space exploration ({datetime.now().strftime('%d.%m.%Y')}).\n"
-    "Structure:\n"
-    "1. Core fact (include source/date via [Markdown](link)).\n"
-    "2. 1-sentence significance/context.\n"
-    "Rules:\n"
-    "- Neutral tone, max 2 paragraphs\n"
-    "- Prioritize: LLMs, robotics, NASA/ESA/SpaceX missions\n"
-    "- No jokes/editorializing\n"
-    )
-    # Optionally: retrieve previous_response_id if you're tracking it
-    response_text, _ = await call_openai(
-        input_text=user_prompt,
-        system_prompt="",
-        temperature=persona_config["temperature"]
-    )
-    persona_ctx = switch_persona(chat_id, update.effective_user.id, Persona(chat_modes[chat_id]))
-    persona_ctx["message_history"].append(
-        {"text": response_text, "sender": "bot", "persona": chat_modes[chat_id]})
-        
-    await update.message.reply_text(response_text[:800])
-
-async def wtf(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    chat_id = update.message.chat.id
-    persona_config = PERSONAS[Persona(chat_modes[chat_id])]
-
-    payload = {
-        "model": "deepseek-chat",
-        "messages": [
-            {"role": "system", "content": persona_config["system"]},
-            {"role": "user", "content": "Объясни смысл жизни (макс. 4 предложения)"}
-        ],
-        "temperature": persona_config["temperature"],
-        "max_tokens": 500
-    }
-    await update.message.reply_text(await call_deepseek(payload))
-
-
-async def problem(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    if not context.args:
-        await update.message.reply_text("Не вижу проблемы")
-        return
-
-    chat_id = update.message.chat.id
-    user_problem = " ".join(context.args)
-
-    # Получаем конфиг персонажа
-    persona_config = PERSONAS[Persona(chat_modes[chat_id])]
-
-    # Генерируем payload
-    payload = {
-        "model": "deepseek-chat",
-        "messages": [
-            {
-                "role": "system",
-                "content": persona_config["system"]
-            },
-            {
-                "role": "user",
-                "content": f"Дай совет по проблеме: {user_problem}"
-            }
-        ],
-        "temperature": persona_config["temperature"]
-    }
-
-    # Отправляем
-    response = await call_deepseek(payload)
-    await update.message.reply_text(response)
-
-
-async def fugoff(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    """Послать нахуй"""
-    chat_id = update.message.chat.id
-    target = context.args[0] if context.args and context.args[0].startswith("@") else "Всем петушкам в чатике"
-    prompt = f"Придумай ОДНО креативное оскорбление для {target} (макс. 3 предложения). Начинай с маленькой буквы. Используй мат и сарказм и зумерский лексикон. Не используй кавычки!"
-    payload = build_prompt(chat_id, prompt, chat_modes[chat_id])
-    await update.message.reply_text(f"{target}, {await call_deepseek(payload)} 🖕")
-
-
-async def randomeme(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    """Случайный мем"""
-    chat_id = update.message.chat.id
-    prompt = "Сгенерируй ОДИН случайный мем/шутку с цинизмом и черным юмором (макс. 3 предложения)"
-    payload = build_prompt(chat_id, prompt, chat_modes[chat_id])
-    await update.message.reply_text(await call_deepseek(payload))
-
-
-async def sych(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    """Оправдание одиночества"""
-    chat_id = update.message.chat.id
-    prompt = "Объясни почему тян не нужны, а быть одиноким сычем - классно (3 предложения, цинично)"
-    payload = build_prompt(chat_id, prompt, chat_modes[chat_id])
-    await update.message.reply_text(await call_deepseek(payload))
-
-
-async def petros(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    """Шутка Петросяна"""
-    chat_id = update.message.chat.id
-    prompt = "Придумай одну единственную шутку в стиле Евгения Петросяна (макс. 3 предложения, глупо и смешно)"
-    payload = build_prompt(chat_id, prompt, chat_modes[chat_id])
-    await update.message.reply_text(await call_deepseek(payload))
-
-
-async def putin(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    """Цитата Путина"""
-    chat_id = update.message.chat.id
-    prompt = "Придумай ОДНУ единственную фразу в стиле Владимира Путина (макс. 2 предложения, смело и патриотично)"
-    payload = build_prompt(chat_id, prompt, chat_modes[chat_id])
-    await update.message.reply_text(await call_deepseek(payload))
-
-
-async def zhir(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    """Цитата Жириновского"""
-    chat_id = update.message.chat.id
-    prompt = "Придумай ОДНУ единственную резкую фразу в стиле Владимира Жириновского (макс. 2 предложения)"
-    payload = build_prompt(chat_id, prompt, chat_modes[chat_id])
-    await update.message.reply_text(await call_deepseek(payload))
-
-
-async def hohly(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    """Новости про Украину"""
-    chat_id = update.message.chat.id
-    prompt = "Кратко и цинично объясни 'че там у хохлов' (3 предложения)"
-    payload = build_prompt(chat_id, prompt, chat_modes[chat_id])
-    await update.message.reply_text(await call_deepseek(payload))
-
-
-async def sage(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    """Восточная мудрость"""
-    chat_id = update.message.chat.id
-    prompt = "Придумай ОДНУ единственную очень мудрую и глубокую по смыслу фразу в стиле восточной мудрости (макс. 3 предложения)"
-    payload = build_prompt(chat_id, prompt, chat_modes[chat_id])
-    await update.message.reply_text(await call_deepseek(payload))
-
-
-async def watts(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    """Цитата Уоттса"""
-    chat_id = update.message.chat.id
-    prompt = "Придумай ОДНУ единственную очень глубокую и мудрую фразу в стиле философа Алана Уоттса (макс. 3 предложения)"
-    payload = build_prompt(chat_id, prompt, chat_modes[chat_id])
-    await update.message.reply_text(await call_deepseek(payload))
 
 
 # --------------------------------------
@@ -307,7 +127,7 @@ def build_prompt(
     persona = PERSONAS.get(Persona(persona_name), PERSONAS[Persona.NORMAL])
     context = persona_contexts.get(
         (chat_id, user_id, persona_name),
-        {"message_history": deque(maxlen=32), "user_hooks": {}, "sentiment": 0.0}
+        {"message_history": deque(maxlen=32)}
     )
 
     # Format history with sender tags
@@ -316,20 +136,17 @@ def build_prompt(
         for msg in context["message_history"]
     )
 
-    # 1. Manual hooks (existing)
-    active_hooks = [f"{k}({v})" for k, v in context["user_hooks"].items() if v >= 2]
+# # 1. Manual hooks (existing)
+# active_hooks = [f"{k}({v})" for k, v in context["user_hooks"].items() if v >= 2]
 
-    # 2. Dynamic hooks (new)
-    dynamic_hooks = [
-        f"{h['theme']}({h['weight']:.1f})"
-        for h in context.get("dynamic_hooks", [])
-        if h["weight"] >= 0.5
-    ][:2]  # Limit to top 2
+# # 2. Dynamic hooks (new)
+# dynamic_hooks = [
+# f"{h['theme']}({h['weight']:.1f})"
+# for h in context.get("dynamic_hooks", [])
+# if h["weight"] >= 0.5
+# ][:2]  # Limit to top 2
 
-    # 3. Sentiment (existing)
-    mood = "АГРЕССИВНЫЙ" if context.get("sentiment", 0) < -0.5 else \
-           "ДОВОЛЬНЫЙ" if context.get("sentiment", 0) > 0.5 else \
-           "НЕЙТРАЛЬНЫЙ"
+
 
     return {
         "model": "deepseek-chat",
@@ -338,9 +155,6 @@ def build_prompt(
                 "role": "system",
                 "content": (
                     f"{persona['system']}\n\n"
-                    f"СОСТОЯНИЕ: {mood}\n"
-                    f"РУЧНЫЕ ТРИГГЕРЫ: {', '.join(active_hooks) if active_hooks else 'нет'}\n"
-                    f"АВТОТЕМЫ: {', '.join(dynamic_hooks) if dynamic_hooks else 'нет'}\n"
                     f"ИСТОРИЯ:\n{history_str[-3000:]}"  
                 )
             },
@@ -466,47 +280,47 @@ async def call_openai(input_text: str, system_prompt: str, temperature: float = 
 # GROUP MENTION HANDLER (SPECIAL CASE)
 # --------------------------------------
 
-async def extract_dynamic_hooks(message_history: deque) -> list[dict]:
-    """Extracts top 3 recurring themes using DeepSeek"""
-    if len(message_history) < 3:  # Minimum context
-        return []
+# async def extract_dynamic_hooks(message_history: deque) -> list[dict]:
+#     """Extracts top 3 recurring themes using DeepSeek"""
+#     if len(message_history) < 3:  # Minimum context
+#         return []
 
-    try:
-        context = "\n".join(
-            f"{msg['sender'][0].upper()}: {msg['text']}"
-            for msg in list(message_history)[-5:]  # Last 5 messages
-        )
+#     try:
+#         context = "\n".join(
+#             f"{msg['sender'][0].upper()}: {msg['text']}"
+#             for msg in list(message_history)[-5:]  # Last 5 messages
+#         )
 
-        payload = {
-            "model": "deepseek-chat",
-            "messages": [
-                {
-                    "role": "system",
-                    "content": """Analyze messages for recurring themes. Return JSON:
-                    {"themes": [{"theme": "topic", "weight": 0.0-1.0}]}
-                    Rules:
-                    1. Only include themes mentioned >1 times
-                    2. Skip names
-                    3. Return max 3 themes"""
-                },
-                {"role": "user", "content": f"Messages:\n{context}\nKey themes:"}
-            ],
-            "temperature": 0.3,
-            "response_format": {"type": "json_object"}
-        }
+#         payload = {
+#             "model": "deepseek-chat",
+#             "messages": [
+#                 {
+#                     "role": "system",
+#                     "content": """Analyze messages for recurring themes. Return JSON:
+#                     {"themes": [{"theme": "topic", "weight": 0.0-1.0}]}
+#                     Rules:
+#                     1. Only include themes mentioned >1 times
+#                     2. Skip names
+#                     3. Return max 3 themes"""
+#                 },
+#                 {"role": "user", "content": f"Messages:\n{context}\nKey themes:"}
+#             ],
+#             "temperature": 0.3,
+#             "response_format": {"type": "json_object"}
+#         }
 
-        response = requests.post(DEEPSEEK_API_URL, headers=DEEPSEEK_HEADERS, json=payload, timeout=20)
-        response.raise_for_status()
+#         response = requests.post(DEEPSEEK_API_URL, headers=DEEPSEEK_HEADERS, json=payload, timeout=20)
+#         response.raise_for_status()
 
-        themes = json.loads(response.json()['choices'][0]['message']['content']).get("themes", [])
-        return [
-            {"theme": t["theme"].lower(), "weight": min(max(t["weight"], 0.1), 0.9)}
-            for t in sorted(themes, key=lambda x: -x["weight"])[:3]  # Top 3 by weight
-        ]
+#         themes = json.loads(response.json()['choices'][0]['message']['content']).get("themes", [])
+#         return [
+#             {"theme": t["theme"].lower(), "weight": min(max(t["weight"], 0.1), 0.9)}
+#             for t in sorted(themes, key=lambda x: -x["weight"])[:3]  # Top 3 by weight
+#         ]
 
-    except Exception as e:
-        logger.error(f"Hook extraction failed: {e}")
-        return []
+#     except Exception as e:
+#         logger.error(f"Hook extraction failed: {e}")
+#         return []
 
 async def handle_mention(update: Update, context: ContextTypes.DEFAULT_TYPE):
     if not update.message or not update.message.text:
@@ -522,30 +336,30 @@ async def handle_mention(update: Update, context: ContextTypes.DEFAULT_TYPE):
     persona_ctx.setdefault("msg_counter", 0)
     persona_ctx["msg_counter"] += 1
 
-    # 2. Update manual hooks (existing)
-    for trigger in PERSONA_HOOKS.get(current_persona, []):
-        if any(trigger in word.lower() for word in text.split()):
-            persona_ctx["user_hooks"][trigger] = persona_ctx["user_hooks"].get(trigger, 0) + 1
+    # # 2. Update manual hooks (existing)
+    # for trigger in PERSONA_HOOKS.get(current_persona, []):
+    #     if any(trigger in word.lower() for word in text.split()):
+    #         persona_ctx["user_hooks"][trigger] = persona_ctx["user_hooks"].get(trigger, 0) + 1
 
-    #3. Dynamic hooks analysis
-    if persona_ctx["msg_counter"] % 3 == 0:  # <-- No .env check needed
-        try:
-            persona_ctx["dynamic_hooks"] = await extract_dynamic_hooks(persona_ctx["message_history"])
-            logger.info(f"Dynamic Hooks Updated")
-        except Exception as e:
-            logger.warning(f"Dynamic Hooks Failed: {e}")
+    # #3. Dynamic hooks analysis
+    # if persona_ctx["msg_counter"] % 3 == 0:  # <-- No .env check needed
+    #     try:
+    #         persona_ctx["dynamic_hooks"] = await extract_dynamic_hooks(persona_ctx["message_history"])
+    #         logger.info(f"Dynamic Hooks Updated")
+    #     except Exception as e:
+    #         logger.warning(f"Dynamic Hooks Failed: {e}")
 
-    # 4. Update sentiment (existing)
-    def get_sentiment(text: str) -> float:
-        """Returns sentiment polarity (-1 to 1) for English, 0 for non-English"""
-        if any(cyr_char in text.lower() for cyr_char in 'абвгдеёжзийклмнопрстуфхцчшщъыьэюя'):
-            logger.debug(f"Skipping sentiment analysis for Russian text: '{text}'")
-            return 0.0
-        blob = TextBlob(text)
-        polarity = blob.sentiment.polarity
-        return polarity
+    # # 4. Update sentiment (existing)
+    # def get_sentiment(text: str) -> float:
+    #     """Returns sentiment polarity (-1 to 1) for English, 0 for non-English"""
+    #     if any(cyr_char in text.lower() for cyr_char in 'абвгдеёжзийклмнопрстуфхцчшщъыьэюя'):
+    #         logger.debug(f"Skipping sentiment analysis for Russian text: '{text}'")
+    #         return 0.0
+    #     blob = TextBlob(text)
+    #     polarity = blob.sentiment.polarity
+    #     return polarity
 
-    persona_ctx["sentiment"] = get_sentiment(text)
+    # persona_ctx["sentiment"] = get_sentiment(text)
 
 
 
@@ -576,11 +390,11 @@ async def handle_mention(update: Update, context: ContextTypes.DEFAULT_TYPE):
         "persona": current_persona.value
     })
 
-    # 8. Apply decay (modified)
-    persona_ctx.update(decay_hooks({
-        **persona_ctx["user_hooks"],
-        **{"dynamic_hooks": persona_ctx.get("dynamic_hooks", [])}
-    }))
+    # # 8. Apply decay (modified)
+    # persona_ctx.update(decay_hooks({
+    #     **persona_ctx["user_hooks"],
+    #     **{"dynamic_hooks": persona_ctx.get("dynamic_hooks", [])}
+    # }))
 
     await update.message.reply_text(response)
 
@@ -822,7 +636,7 @@ async def handle_image(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
         processing_msg = await update.message.reply_text("Разглядываю")
         response = openai_client.chat.completions.create(
-            model="gpt-4.1",  #original model 4.1
+            model="gpt-4.1-mini",  #original model 4.1
             messages=[{
                 "role": "user",
                 "content": [
@@ -945,24 +759,10 @@ async def group_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
 # REGISTER ALL COMMANDS
 # --------------------------------------
-commands = [
-    ("news", news),
-    ("wtf", wtf),
-    ("problem", problem),
-    ("fugoff", fugoff),
-    ("randomeme", randomeme),
-    ("sych", sych),
-    ("putin", putin),
-    ("zhir", zhir),
-    ("hohly", hohly),
-    ("sage", sage),
-    ("watts", watts),
-    ("mode", set_mode),
-    ("petros", petros)
-]
 
-for cmd, handler in commands:
-    app.add_handler(CommandHandler(cmd, handler))
+
+# for cmd, handler in commands:
+#     app.add_handler(CommandHandler(cmd, handler))
 
 
 
@@ -1004,5 +804,5 @@ app.add_handler(MessageHandler(
 app.add_handler(MessageHandler(filters.VOICE, handle_voice))
 
 if __name__ == "__main__":
-    print("⚡ Helper запущен с точным набором функций")
+    print("⚡ Новый Helper запущен с точным набором функций")
     app.run_polling()
