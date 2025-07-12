@@ -759,10 +759,14 @@ async def group_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
 # REGISTER ALL COMMANDS
 # --------------------------------------
+commands = [
 
+    ("mode", set_mode)
+ 
+]
 
-# for cmd, handler in commands:
-#     app.add_handler(CommandHandler(cmd, handler))
+for cmd, handler in commands:
+    app.add_handler(CommandHandler(cmd, handler))
 
 
 
