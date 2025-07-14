@@ -650,7 +650,7 @@ async def handle_image(update: Update, context: ContextTypes.DEFAULT_TYPE):
                     }
                 ]
             }],
-            max_tokens=250  # Your original token limit
+            max_tokens=500  # Your original token limit
         )
 
         # --- NEW: Store Bot Response ---
