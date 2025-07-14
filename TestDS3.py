@@ -470,7 +470,7 @@ async def handle_file(update: Update, context: ContextTypes.DEFAULT_TYPE):
             return
 
         # 5. Store raw text for queries
-        context.user_data['last_file_raw'] = text[:12000]
+        context.user_data['last_file_raw'] = text[:15000]
         context.user_data['file_timestamp'] = time.time()
         context.user_data.setdefault('is_file_context', True) 
         
@@ -478,7 +478,7 @@ async def handle_file(update: Update, context: ContextTypes.DEFAULT_TYPE):
         user_question = update.message.caption or "Резюме документа (5 предложений)"
         prompt = f"""
         File content:
-        {text[:12000]}
+        {text[:15000]}
 
         Question: {user_question}
         """
@@ -567,7 +567,7 @@ async def handle_file_query(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
 
     # 3. Prepare and log the prompt
-    file_preview = context.user_data['last_file_raw'][:10000]
+    file_preview = context.user_data['last_file_raw'][:15000]
     full_prompt = f"Файл:\n{file_preview}\n\nВопрос: {update.message.text}"
     logger.info("📄 FILE QUERY TRIGGERED")
     logger.info(f"Trigger: {'keywords' if not is_reply_to_file_summary else 'reply to file summary'}")
@@ -631,7 +631,7 @@ async def handle_image(update: Update, context: ContextTypes.DEFAULT_TYPE):
         prompt_text = (
             f"{persona_config['system']}\n\n"
             f"Запрос: {user_question}\n\n"
-            "Ответь в своём стиле (макс. 5 предложений). Удели мнимание деталям изображения."
+            "Ответь в своём стиле (макс. 10 предложений). Удели мнимание деталям изображения."
         )
 
         processing_msg = await update.message.reply_text("Разглядываю")
