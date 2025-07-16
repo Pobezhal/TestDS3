@@ -386,7 +386,7 @@ async def handle_file(update: Update, context: ContextTypes.DEFAULT_TYPE):
             text = "\n".join(shape.text for slide in prs.slides for shape in slide.shapes if hasattr(shape, "text"))
         elif file_ext in (".txt", ".csv"):
             with open(file_path, "r", encoding="utf-8") as f:
-                text = f.read(12000)
+                text = f.read(15000)
 
         if not text.strip():
             await progress_msg.edit_text("🤷‍♂️ Empty/unreadable file")
