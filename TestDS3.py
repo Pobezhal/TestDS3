@@ -39,15 +39,6 @@ persona_contexts = defaultdict(dict)
 
 
 
-# def switch_persona(chat_id: int, user_id: int, new_persona: Persona) -> dict:
-#     key = (chat_id, user_id, new_persona.value)
-#     if key not in persona_contexts:
-#         persona_contexts[key] = {
-#             "message_history": deque(maxlen=32),
-#
-#         }
-#     return persona_contexts[key]  # Всегда возвращает контекст
-
 def switch_persona(chat_id: int, user_id: int, new_persona: Persona) -> dict:
     key = (chat_id, user_id, new_persona.value)
     if key not in persona_contexts:
@@ -136,15 +127,6 @@ def build_prompt(
         for msg in context["message_history"]
     )
 
-# # 1. Manual hooks (existing)
-# active_hooks = [f"{k}({v})" for k, v in context["user_hooks"].items() if v >= 2]
-
-# # 2. Dynamic hooks (new)
-# dynamic_hooks = [
-# f"{h['theme']}({h['weight']:.1f})"
-# for h in context.get("dynamic_hooks", [])
-# if h["weight"] >= 0.5
-# ][:2]  # Limit to top 2
 
 
 
@@ -164,7 +146,7 @@ def build_prompt(
             }
         ],
         "temperature": persona["temperature"],
-        "max_tokens": 600,
+        "max_tokens": 900,
         "frequency_penalty": 1
     }
 
@@ -204,26 +186,35 @@ async def call_deepseek(payload: dict) -> str:
 
 
 async def call_ai(payload: dict) -> str:
-    """DeepSeek with silent OpenAI fallback"""
-    try:
-        # Try DeepSeek first
-        response = requests.post(
-            DEEPSEEK_API_URL,
-            headers=DEEPSEEK_HEADERS,
-            json=payload,
-            timeout=14
-        ).json()
-        return response['choices'][0]['message']['content'].strip()
+    """DeepSeek with silent OpenAI fallback. Returns user-safe message if both fail."""
+    TIMEOUT = 14
 
-    except Exception as e:
-        # Log fallback but hide it from users
-        logger.error(f"DeepSeek failed ({type(e).__name__}), falling back to OpenAI")
+    try:
+        # Try OpenAI first
         resp = openai_client.chat.completions.create(
-            model="gpt-4o-mini",
+            model="gpt-4.1-mini",  # Your specified model
             messages=payload["messages"],
-            max_tokens=600
+            timeout=TIMEOUT,
         )
         return resp.choices[0].message.content
+
+    except Exception as e:
+        logger.error(f"OpenAI failed ({type(e).__name__}), falling back to DeepSeek")
+
+        try:
+            # Try DeepSeek
+            response = requests.post(
+                DEEPSEEK_API_URL,
+                headers=DEEPSEEK_HEADERS,
+                json=payload,
+                timeout=TIMEOUT,
+            )
+            response.raise_for_status()  # Check HTTP errors (e.g., 4XX/5XX)
+            return response.json()["choices"][0]["message"]["content"].strip()
+
+        except Exception as fallback_error:
+            logger.error(f"Both OpenAI and DeepSeek failed: {fallback_error}")
+            return "Sorry, the AI service is temporarily unavailable. Please try again later."
 
 
 async def call_openai(input_text: str, system_prompt: str, temperature: float = 0.7, previous_response_id: str = None):
@@ -274,53 +265,8 @@ async def call_openai(input_text: str, system_prompt: str, temperature: float = 
 
 
 
-    # --------------------------------------
 
 
-# GROUP MENTION HANDLER (SPECIAL CASE)
-# --------------------------------------
-
-# async def extract_dynamic_hooks(message_history: deque) -> list[dict]:
-#     """Extracts top 3 recurring themes using DeepSeek"""
-#     if len(message_history) < 3:  # Minimum context
-#         return []
-
-#     try:
-#         context = "\n".join(
-#             f"{msg['sender'][0].upper()}: {msg['text']}"
-#             for msg in list(message_history)[-5:]  # Last 5 messages
-#         )
-
-#         payload = {
-#             "model": "deepseek-chat",
-#             "messages": [
-#                 {
-#                     "role": "system",
-#                     "content": """Analyze messages for recurring themes. Return JSON:
-#                     {"themes": [{"theme": "topic", "weight": 0.0-1.0}]}
-#                     Rules:
-#                     1. Only include themes mentioned >1 times
-#                     2. Skip names
-#                     3. Return max 3 themes"""
-#                 },
-#                 {"role": "user", "content": f"Messages:\n{context}\nKey themes:"}
-#             ],
-#             "temperature": 0.3,
-#             "response_format": {"type": "json_object"}
-#         }
-
-#         response = requests.post(DEEPSEEK_API_URL, headers=DEEPSEEK_HEADERS, json=payload, timeout=20)
-#         response.raise_for_status()
-
-#         themes = json.loads(response.json()['choices'][0]['message']['content']).get("themes", [])
-#         return [
-#             {"theme": t["theme"].lower(), "weight": min(max(t["weight"], 0.1), 0.9)}
-#             for t in sorted(themes, key=lambda x: -x["weight"])[:3]  # Top 3 by weight
-#         ]
-
-#     except Exception as e:
-#         logger.error(f"Hook extraction failed: {e}")
-#         return []
 
 async def handle_mention(update: Update, context: ContextTypes.DEFAULT_TYPE):
     if not update.message or not update.message.text:
@@ -336,30 +282,7 @@ async def handle_mention(update: Update, context: ContextTypes.DEFAULT_TYPE):
     persona_ctx.setdefault("msg_counter", 0)
     persona_ctx["msg_counter"] += 1
 
-    # # 2. Update manual hooks (existing)
-    # for trigger in PERSONA_HOOKS.get(current_persona, []):
-    #     if any(trigger in word.lower() for word in text.split()):
-    #         persona_ctx["user_hooks"][trigger] = persona_ctx["user_hooks"].get(trigger, 0) + 1
 
-    # #3. Dynamic hooks analysis
-    # if persona_ctx["msg_counter"] % 3 == 0:  # <-- No .env check needed
-    #     try:
-    #         persona_ctx["dynamic_hooks"] = await extract_dynamic_hooks(persona_ctx["message_history"])
-    #         logger.info(f"Dynamic Hooks Updated")
-    #     except Exception as e:
-    #         logger.warning(f"Dynamic Hooks Failed: {e}")
-
-    # # 4. Update sentiment (existing)
-    # def get_sentiment(text: str) -> float:
-    #     """Returns sentiment polarity (-1 to 1) for English, 0 for non-English"""
-    #     if any(cyr_char in text.lower() for cyr_char in 'абвгдеёжзийклмнопрстуфхцчшщъыьэюя'):
-    #         logger.debug(f"Skipping sentiment analysis for Russian text: '{text}'")
-    #         return 0.0
-    #     blob = TextBlob(text)
-    #     polarity = blob.sentiment.polarity
-    #     return polarity
-
-    # persona_ctx["sentiment"] = get_sentiment(text)
 
 
 
