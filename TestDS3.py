@@ -569,6 +569,15 @@ async def handle_file_query(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
     # 3. Query Chroma for top chunks
     query = update.message.text
+    # Debug: Show all chunks for this chat_id
+    logger.info("🔍 All user chunks: " + str(file_chunks_collection.query(
+        query_texts=["test"],
+        n_results=1,
+        where={"chat_id": str(update.message.chat.id)}
+        ).get("documents", [[]])[0]))
+
+
+    
     results = file_chunks_collection.query(
         query_texts=[query],
         n_results=3,
@@ -578,6 +587,8 @@ async def handle_file_query(update: Update, context: ContextTypes.DEFAULT_TYPE):
     top_chunks = results.get("documents", [[]])[0]
     if not top_chunks:
         logger.info("⚠️ No chunks returned from Chroma query")
+        await update.message.reply_text("⚠️ Не нашёл ничего в документе по запросу.")
+        return 
     logger.debug(f"Top Chunks: {top_chunks}")
     context_passage = "\n\n".join(top_chunks)
     
