@@ -9,6 +9,7 @@ from datetime import datetime
 from pathlib import Path
 import json  # <-- Add this line
 import httpx
+from chromadb.config import Settings
 from uuid import uuid4
 import re
 import chromadb
@@ -56,7 +57,9 @@ def switch_persona(chat_id: int, user_id: int, new_persona: Persona) -> dict:
 load_dotenv()
 
 
-chroma_client = chromadb.Client()
+chroma_client = chromadb.Client(Settings(
+    persist_directory="/data/chroma"
+))
 
 # Use OpenAI for embeddings
 openai_embedder = embedding_functions.OpenAIEmbeddingFunction(
