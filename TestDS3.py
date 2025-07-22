@@ -559,7 +559,7 @@ async def handle_file_query(update: Update, context: ContextTypes.DEFAULT_TYPE):
         update.message.reply_to_message.message_id == context.user_data.get('last_file_message_id')
     )
 
-    if not any(trigger in query for trigger in ["файл", "в файле", "files"]) and not is_reply_to_file_summary:
+    if not any(trigger in query for trigger in ["файл", "в файле", "files", "file", "document"]) and not is_reply_to_file_summary:
         logger.debug(f"Not a file query: '{query}' (reply_to_file={is_reply_to_file_summary})")
         await handle_mention(update, context)
         return
