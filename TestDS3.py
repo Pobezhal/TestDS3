@@ -559,7 +559,7 @@ async def handle_file_query(update: Update, context: ContextTypes.DEFAULT_TYPE):
         update.message.reply_to_message.message_id == context.user_data.get('last_file_message_id')
     )
 
-    if not any(trigger in query for trigger in ["файл", "в файле"]) and not is_reply_to_file_summary:
+    if not any(trigger in query for trigger in ["файл", "в файле", "files"]) and not is_reply_to_file_summary:
         logger.debug(f"Not a file query: '{query}' (reply_to_file={is_reply_to_file_summary})")
         await handle_mention(update, context)
         return
@@ -700,7 +700,7 @@ async def handle_voice(update: Update, context: ContextTypes.DEFAULT_TYPE):
             return
 
         # 2. ONLY NEW PART: Check for file queries
-        if any(trigger in user_text.lower() for trigger in ["файл", "в файле", "документ", "в документе"]):
+        if any(trigger in user_text.lower() for trigger in ["файл", "в файле", "документ", "в документе", "document"]):
             results = file_chunks_collection.query(
             query_texts=[user_text],
             n_results=3,
@@ -807,10 +807,7 @@ app.add_handler(MessageHandler(
 #file query handler
 app.add_handler(MessageHandler(
     filters.TEXT & ~filters.COMMAND,
-    lambda update, ctx: (
-        handle_file_query(update, ctx) if 'last_file_raw' in ctx.user_data else
-        handle_mention(update, ctx)
-    )
+    handle_file_query  # <-- this function will internally decide
 ))
 
 
