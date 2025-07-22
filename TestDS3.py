@@ -84,7 +84,7 @@ chat_modes = defaultdict(lambda: "normal")
 
 logging.basicConfig(
     format='%(asctime)s - %(name)s - %(levelname)s - %(message)s',
-    level=logging.DEBUG
+    level=logging.INFO
 )
 logger = logging.getLogger(__name__)
 
@@ -576,6 +576,8 @@ async def handle_file_query(update: Update, context: ContextTypes.DEFAULT_TYPE):
     )
     
     top_chunks = results.get("documents", [[]])[0]
+    if not top_chunks:
+        logger.info("⚠️ No chunks returned from Chroma query")
     logger.debug(f"Top Chunks: {top_chunks}")
     context_passage = "\n\n".join(top_chunks)
     
