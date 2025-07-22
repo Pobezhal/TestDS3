@@ -84,7 +84,7 @@ chat_modes = defaultdict(lambda: "normal")
 
 logging.basicConfig(
     format='%(asctime)s - %(name)s - %(levelname)s - %(message)s',
-    level=logging.INFO
+    level=logging.DEBUG
 )
 logger = logging.getLogger(__name__)
 
@@ -576,6 +576,7 @@ async def handle_file_query(update: Update, context: ContextTypes.DEFAULT_TYPE):
     )
     
     top_chunks = results.get("documents", [[]])[0]
+    logger.debug(f"Top Chunks: {top_chunks}")
     context_passage = "\n\n".join(top_chunks)
     
     full_prompt = f"""
