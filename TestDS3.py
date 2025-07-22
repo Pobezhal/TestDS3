@@ -9,6 +9,10 @@ from datetime import datetime
 from pathlib import Path
 import json  # <-- Add this line
 import httpx
+from uuid import uuid4
+import re
+import chromadb
+from chromadb.utils import embedding_functions
 from telegram import Update
 import time
 from telegram.ext import Application, CommandHandler, MessageHandler, filters, ContextTypes
@@ -52,7 +56,19 @@ def switch_persona(chat_id: int, user_id: int, new_persona: Persona) -> dict:
 load_dotenv()
 
 
+chroma_client = chromadb.Client()
 
+# Use OpenAI for embeddings
+openai_embedder = embedding_functions.OpenAIEmbeddingFunction(
+    api_key=os.getenv("OPENAI_API_KEY"),
+    model_name="text-embedding-3-small"
+)
+
+# Global collection: file chunks (we'll filter per chat later)
+file_chunks_collection = chroma_client.get_or_create_collection(
+    name="file_chunks",
+    embedding_function=openai_embedder
+)
 
 
 
@@ -386,24 +402,38 @@ async def handle_file(update: Update, context: ContextTypes.DEFAULT_TYPE):
             text = "\n".join(shape.text for slide in prs.slides for shape in slide.shapes if hasattr(shape, "text"))
         elif file_ext in (".txt", ".csv"):
             with open(file_path, "r", encoding="utf-8") as f:
-                text = f.read(15000)
+                text = f.read()
 
         if not text.strip():
             await progress_msg.edit_text("🤷‍♂️ Empty/unreadable file")
             return
 
-        # 5. Store raw text for queries
-        context.user_data['last_file_raw'] = text[:15000]
-        context.user_data['file_timestamp'] = time.time()
-        context.user_data.setdefault('is_file_context', True) 
+        # 5. Store chunks in Chroma
+        chunks = split_text_into_chunks(text, chunk_size=800, overlap=100)
+        store_chunks_in_chroma(
+            chat_id=update.message.chat.id,
+            user_id=update.effective_user.id,
+            filename=update.message.document.file_name,
+            chunks=chunks
+        )
         
         # 6. Generate response with TIMEOUTS
         user_question = update.message.caption or "Резюме документа (5 предложений)"
-        prompt = f"""
-        File content:
-        {text[:15000]}
 
-        Question: {user_question}
+        results = file_chunks_collection.query(
+            query_texts=[user_question],
+            n_results=3,
+            where={"chat_id": str(update.message.chat.id)}
+        )
+        
+        top_chunks = results.get("documents", [[]])[0]
+        context_passage = "\n\n".join(top_chunks)
+        
+        prompt = f"""
+        Контекст из документа:
+        {context_passage}
+        
+        Вопрос: {user_question}
         """
 
         response = None
@@ -462,6 +492,61 @@ async def handle_file(update: Update, context: ContextTypes.DEFAULT_TYPE):
             os.remove(file_path)
 
 
+def split_text_into_chunks(text: str, chunk_size: int = 800, overlap: int = 100) -> list:
+    """
+    Splits text into overlapping chunks using simple sentence-based logic.
+
+    Args:
+        text (str): Full text to chunk.
+        chunk_size (int): Approximate number of words per chunk.
+        overlap (int): Words repeated between chunks for context.
+
+    Returns:
+        list[str]: List of text chunks.
+    """
+    sentences = re.split(r'(?<=[.!?])\s+', text)
+    chunks = []
+    current_chunk = []
+
+    for sentence in sentences:
+        words = sentence.split()
+        current_chunk.extend(words)
+
+        if len(current_chunk) >= chunk_size:
+            chunks.append(' '.join(current_chunk[:chunk_size]))
+            current_chunk = current_chunk[chunk_size - overlap:]
+
+    if current_chunk:
+        chunks.append(' '.join(current_chunk))
+
+    return chunks
+
+
+def store_chunks_in_chroma(chat_id, user_id, filename, chunks: list[str]):
+    """
+    Stores text chunks in Chroma with metadata.
+
+    Args:
+        chat_id (int): Telegram chat ID.
+        user_id (int): Telegram user ID.
+        filename (str): Original file name.
+        chunks (list[str]): List of text chunks.
+    """
+    ids = [str(uuid4()) for _ in chunks]
+    metadatas = [
+        {"chat_id": str(chat_id), "user_id": str(user_id), "filename": filename}
+        for _ in chunks
+    ]
+
+    file_chunks_collection.add(
+        documents=chunks,
+        metadatas=metadatas,
+        ids=ids
+    )
+
+    logger.info(f"✅ Stored {len(chunks)} chunks for '{filename}' (chat: {chat_id})")
+
+
 async def handle_file_query(update: Update, context: ContextTypes.DEFAULT_TYPE):
     # 1. Check triggers
     query = update.message.text.lower()
@@ -476,25 +561,31 @@ async def handle_file_query(update: Update, context: ContextTypes.DEFAULT_TYPE):
         await handle_mention(update, context)
         return
 
-    # 2. Verify file exists and is fresh (30min TTL)
-    if 'last_file_raw' not in context.user_data:
-        logger.warning("File query attempted but no file loaded")
-        await update.message.reply_text("❌ Файл не загружен")
-        return
-
-    file_age = time.time() - context.user_data.get('file_timestamp', 0)
-    if file_age > 1800:
-        logger.warning(f"File data expired ({file_age//60} minutes old)")
-        await update.message.reply_text("❌ Данные устарели (30+ минут)")
-        return
 
 
-    # 3. Prepare and log the prompt
-    file_preview = context.user_data['last_file_raw'][:15000]
-    full_prompt = f"Файл:\n{file_preview}\n\nВопрос: {update.message.text}"
-    logger.info("📄 FILE QUERY TRIGGERED")
+
+    # 3. Query Chroma for top chunks
+    query = update.message.text
+    results = file_chunks_collection.query(
+        query_texts=[query],
+        n_results=3,
+        where={"chat_id": str(update.message.chat.id)}
+    )
+    
+    top_chunks = results.get("documents", [[]])[0]
+    context_passage = "\n\n".join(top_chunks)
+    
+    full_prompt = f"""
+    Контекст из документа:
+    {context_passage}
+    
+    Вопрос: {query}
+    """
+    
+    logger.info("📄 FILE QUERY TRIGGERED via Chroma")
+    logger.info(f"User query: {query}")
     logger.info(f"Trigger: {'keywords' if not is_reply_to_file_summary else 'reply to file summary'}")
-    logger.info(f"User query: {update.message.text}")
+
 
     # 4. Process with AI (minimal system prompt)
     try:
@@ -607,20 +698,30 @@ async def handle_voice(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
         # 2. ONLY NEW PART: Check for file queries
         if any(trigger in user_text.lower() for trigger in ["файл", "в файле", "документ", "в документе"]):
-            if 'last_file_raw' not in context.user_data:
-                await update.message.reply_text("❌ Нет загруженного файла")
-                return
-
-            # Process as file query
-            file_content = context.user_data['last_file_raw'][:10000]
+            results = file_chunks_collection.query(
+            query_texts=[user_text],
+            n_results=3,
+            where={"chat_id": str(update.message.chat.id)}
+            )
+        
+            top_chunks = results.get("documents", [[]])[0]
+            context_passage = "\n\n".join(top_chunks)
+        
+            full_prompt = f"""
+            Контекст из документа:
+            {context_passage}
+        
+            Вопрос: {user_text}
+            """
+        
             response = await call_ai({
                 "model": "deepseek-chat",
                 "messages": [{
                     "role": "system",
-                    "content": "Отвечай ТОЛЬКО из файла:"
+                    "content": "Отвечай ТОЛЬКО из файла. Не используй внешние знания."
                 }, {
                     "role": "user",
-                    "content": f"Файл:\n{file_content}\n\nВопрос: {user_text}"
+                    "content": full_prompt
                 }],
                 "temperature": 0.3
             })
