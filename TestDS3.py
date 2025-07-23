@@ -548,7 +548,8 @@ def store_chunks_in_chroma(chat_id, user_id, filename, chunks: list[str]):
         metadatas=metadatas,
         ids=ids
     )
-
+    chroma_client.persist()
+    print("Chroma volume after persist:", os.listdir("/data/chroma"))
     logger.info(f"✅ Stored {len(chunks)} chunks for '{filename}' (chat: {chat_id})")
 
 
