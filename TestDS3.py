@@ -579,6 +579,10 @@ async def handle_file_query(update: Update, context: ContextTypes.DEFAULT_TYPE):
         n_results=3,
         where={"chat_id": str(update.message.chat.id)}
     )
+
+    logger.info("📄 FILE QUERY TRIGGERED via Chroma")
+    logger.info(f"User query: {query}")
+    logger.info(f"Trigger: {'keywords' if not is_reply_to_file_summary else 'reply to file summary'}")
     
     top_chunks = results.get("documents", [[]])[0]
     if not top_chunks:
@@ -595,9 +599,7 @@ async def handle_file_query(update: Update, context: ContextTypes.DEFAULT_TYPE):
     Вопрос: {query}
     """
     
-    logger.info("📄 FILE QUERY TRIGGERED via Chroma")
-    logger.info(f"User query: {query}")
-    logger.info(f"Trigger: {'keywords' if not is_reply_to_file_summary else 'reply to file summary'}")
+    
 
 
     # 4. Process with AI (minimal system prompt)
