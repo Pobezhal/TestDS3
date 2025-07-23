@@ -60,6 +60,8 @@ load_dotenv()
 chroma_client = chromadb.Client(Settings(
     persist_directory="/data/chroma"
 ))
+print("Chroma contents:", os.listdir("/data/chroma"))
+
 
 # Use OpenAI for embeddings
 openai_embedder = embedding_functions.OpenAIEmbeddingFunction(
