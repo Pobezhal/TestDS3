@@ -570,11 +570,7 @@ async def handle_file_query(update: Update, context: ContextTypes.DEFAULT_TYPE):
     # 3. Query Chroma for top chunks
     query = update.message.text
     # Debug: Show all chunks for this chat_id
-    logger.info("🔍 All user chunks: " + str(file_chunks_collection.query(
-        query_texts=["test"],
-        n_results=1,
-        where={"chat_id": str(update.message.chat.id)}
-        ).get("documents", [[]])[0]))
+    
 
 
     
@@ -589,7 +585,7 @@ async def handle_file_query(update: Update, context: ContextTypes.DEFAULT_TYPE):
         logger.info("⚠️ No chunks returned from Chroma query")
         await update.message.reply_text("⚠️ Не нашёл ничего в документе по запросу.")
         return 
-    logger.debug(f"Top Chunks: {top_chunks}")
+    logger.info(f"Top Chunks count: {len(top_chunks)}")
     context_passage = "\n\n".join(top_chunks)
     
     full_prompt = f"""
@@ -606,11 +602,11 @@ async def handle_file_query(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
     # 4. Process with AI (minimal system prompt)
     try:
-        payload = {
+        prompt_payload = {
             "model": "deepseek-chat",
             "messages": [{
                 "role": "system",
-                "content": "Отвечай ТОЛЬКО на основе приложенного файла. Не используй другие знания."
+                "content": "Используй ТОЛЬКО текст из документа ниже. Игнорируй внешние знания."
             }, {
                 "role": "user",
                 "content": full_prompt
@@ -618,11 +614,32 @@ async def handle_file_query(update: Update, context: ContextTypes.DEFAULT_TYPE):
             "temperature": 0.3
         }
 
-        response = await call_ai(payload)
+        try:
+            # Try DeepSeek first (with 15s timeout)
+            response = await asyncio.wait_for(
+                call_deepseek(prompt_payload),
+                timeout=30.0
+            )
+        except (asyncio.TimeoutError, Exception):
+            logger.warning("DeepSeek failed, falling back to OpenAI")
+            # Fallback to OpenAI with timeout
+            response = await asyncio.wait_for(
+                asyncio.get_event_loop().run_in_executor(
+                    None,
+                    lambda: openai_client.chat.completions.create(
+                        model="gpt-4o-mini",
+                        messages=prompt_payload["messages"],
+                        temperature=0.3,
+                        timeout=20.0
+                    ).choices[0].message.content
+                ),
+                timeout=12.0
+            )
+
         await update.message.reply_text(response[:1000])
 
     except Exception as e:
-        logger.error(f"File query failed: {e}")
+        logger.error(f"File query failed after fallback: {e}")
         await update.message.reply_text("💥 Ошибка обработки запроса")
 
 
