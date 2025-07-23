@@ -57,9 +57,8 @@ def switch_persona(chat_id: int, user_id: int, new_persona: Persona) -> dict:
 load_dotenv()
 
 
-chroma_client = chromadb.Client(Settings(
-    persist_directory="/data/chroma"
-))
+chroma_client = chromadb.PersistentClient(path="/data/chroma")
+
 print("Chroma contents:", os.listdir("/data/chroma"))
 
 
