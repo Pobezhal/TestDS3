@@ -96,8 +96,7 @@ class MCPSearchFunction:
             # Fetch and process full webpage content
             content_data = self._extract_webpage_content(url)
             if not content_data.get('content'):
-                print(f"⚠️ No content extracted from {url}")
-                return None
+                content_data['content'] = result.get('snippet', '') 
 
             # Calculate relevance and quality scores
             relevance_score = self._calculate_relevance(content_data.get('content', ''), query)
