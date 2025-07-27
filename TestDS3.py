@@ -539,14 +539,18 @@ def store_chunks_in_chroma(chat_id, user_id, filename, chunks: list[str]):
         for _ in chunks
     ]
 
-    file_chunks_collection.add(
-        documents=chunks,
-        metadatas=metadatas,
-        ids=ids
-    )
+    BATCH_SIZE = 100  # Controls how many chunks per embedding call
+
+    for i in range(0, len(chunks), BATCH_SIZE):
+        file_chunks_collection.add(
+            documents=chunks[i:i + BATCH_SIZE],
+            metadatas=metadatas[i:i + BATCH_SIZE],
+            ids=ids[i:i + BATCH_SIZE]
+        )
 
     print("Chroma volume after persist:", os.listdir("/data/chroma"))
     logger.info(f"✅ Stored {len(chunks)} chunks for '{filename}' (chat: {chat_id})")
+
 
 
 async def handle_file_query(update: Update, context: ContextTypes.DEFAULT_TYPE):
