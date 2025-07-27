@@ -27,7 +27,7 @@ class MCPSearchFunction:
 
             for result in top_results:
                 processed_result = self._process_search_result(result, query)
-                if processed_result and processed_result.get('scores', {}).get('overall', 0) > 0.2:
+                if processed_result and processed_result.get('scores', {}).get('overall', 0) > 0.1:
                     processed_results.append(processed_result)
 
             print(f"🔎 Raw processed results count: {len(processed_results)}")
