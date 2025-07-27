@@ -34,7 +34,7 @@ class MCPSearchFunction:
             for r in processed_results:
                 print(f"- URL: {r['url']}")
                 print(f"  Title: {r['title']}")
-                print(f"  Content len: {len(r['content']['main_text'])}")
+     
 
             # Step 3: Sort by relevance/quality
             processed_results.sort(key=lambda x: x.get('scores', {}).get('overall', 0), reverse=True)
@@ -343,21 +343,7 @@ class MCPSearchFunction:
         entities = re.findall(r'\b[A-Z][a-z]+(?:\s+[A-Z][a-z]+)*\b', content)
         return list(set(entities))[:10]
 
-    def _analyze_sentiment(self, content: str) -> str:
-        """Simple sentiment analysis"""
-        positive_words = ['good', 'great', 'excellent', 'amazing', 'wonderful', 'fantastic']
-        negative_words = ['bad', 'terrible', 'awful', 'horrible', 'worse', 'disappointing']
 
-        content_lower = content.lower()
-        pos_count = sum(1 for word in positive_words if word in content_lower)
-        neg_count = sum(1 for word in negative_words if word in content_lower)
-
-        if pos_count > neg_count:
-            return 'positive'
-        elif neg_count > pos_count:
-            return 'negative'
-        else:
-            return 'neutral'
 
 # Usage example:
 # searcher = MCPSearchFunction("your_api_key", "your_search_engine_id")
