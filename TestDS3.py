@@ -1,7 +1,9 @@
-# not a malicious thing, just a bot to make fun of my close friends!!
+# not a malicious thing, just a bot to make fun of my friends!!
 import asyncio  # Добавить в начале файла
 import pytesseract
 from pdf2image import convert_from_path
+from mcpsearch import MCPSearchFunction
+
 from PIL import Image
 import pandas as pd
 from pptx import Presentation
@@ -37,12 +39,10 @@ from textblob import TextBlob
 from persona_hooks import PERSONA_HOOKS
 import sys
 
-#chat_memories = defaultdict(lambda: deque(maxlen=32))
+# chat_memories = defaultdict(lambda: deque(maxlen=32))
 persona_contexts = defaultdict(dict)
 
-
-
-
+load_dotenv()
 
 def switch_persona(chat_id: int, user_id: int, new_persona: Persona) -> dict:
     key = (chat_id, user_id, new_persona.value)
@@ -53,14 +53,16 @@ def switch_persona(chat_id: int, user_id: int, new_persona: Persona) -> dict:
     return persona_contexts[key]
 
 
-# Load tokens
-load_dotenv()
+SEARCH_TRIGGERS = ["search", "fetch", "lookup", "latest", "find", "news", "update", "найди", "поищи"]
 
+searcher = MCPSearchFunction(
+    google_api_key=os.getenv("GOOGLE_API_KEY"),
+    search_engine_id=os.getenv("GOOGLE_CX_ID")
+)
 
 chroma_client = chromadb.PersistentClient(path="/data/chroma")
 
 print("Chroma contents:", os.listdir("/data/chroma"))
-
 
 # Use OpenAI for embeddings
 openai_embedder = embedding_functions.OpenAIEmbeddingFunction(
@@ -74,12 +76,8 @@ file_chunks_collection = chroma_client.get_or_create_collection(
     embedding_function=openai_embedder
 )
 
-
-
 print("OPENAI_KEY_EXISTS:", "OPENAI_API_KEY" in os.environ)  # Debug line
 openai_client = OpenAI(api_key=os.getenv("OPENAI_API_KEY"))
-
-
 
 chat_modes = defaultdict(lambda: "normal")
 
@@ -105,7 +103,6 @@ DEEPSEEK_HEADERS = {
 # --------------------------------------
 
 
-
 async def set_mode(update: Update, context: ContextTypes.DEFAULT_TYPE):
     chat_id = update.message.chat.id
     user_id = update.effective_user.id  # <- ДОБАВЛЕНО для работы с persona_contexts
@@ -125,7 +122,6 @@ async def set_mode(update: Update, context: ContextTypes.DEFAULT_TYPE):
         await update.message.reply_text("❌ Неизвестный режим. Доступные: " + ", ".join([p.value for p in Persona]))
 
 
-
 # --------------------------------------
 # UTILITY FUNCTION
 # --------------------------------------
@@ -133,7 +129,8 @@ def build_prompt(
         chat_id: int,
         user_input: str,
         persona_name: str,
-        user_id: int = None
+        user_id: int = None,
+        search_context: str = ""
 ) -> dict:
     persona = PERSONAS.get(Persona(persona_name), PERSONAS[Persona.NORMAL])
     context = persona_contexts.get(
@@ -147,18 +144,19 @@ def build_prompt(
         for msg in context["message_history"]
     )
 
-
-
-
     return {
-        "model": "deepseek-chat",
+        "model": "gpt-4.1-mini",
         "messages": [
             {
                 "role": "system",
                 "content": (
-                    f"{persona['system']}\n\n"
-                    f"ИСТОРИЯ:\n{history_str[-3000:]}"  
-                )
+                f"{persona['system']}\n\n"
+                f"Если указаны АКТУАЛЬНЫЕ ДАННЫЕ, используй их в ответе.\n"
+                f"Добавляй строку 'Source: ...' ТОЛЬКО с названием источника (например: РИА Новости, BBC, Интерфакс).\n"
+                f"Не добавляй ссылку (URL), кроме случаев, когда пользователь ЯВНО просит: 'дай ссылку', 'link', 'где источник' и т.п.\n\n"
+                f"АКТУАЛЬНЫЕ ДАННЫЕ:\n{search_context}\n\n"
+                f"ИСТОРИЯ:\n{history_str[-3000:]}"
+            )
             },
             {
                 "role": "user",
@@ -169,6 +167,7 @@ def build_prompt(
         "max_tokens": 900,
         "frequency_penalty": 1
     }
+
 
 async def call_deepseek(payload: dict) -> str:
     """Call DeepSeek API with nuclear-grade quote prevention"""
@@ -202,7 +201,6 @@ async def call_deepseek(payload: dict) -> str:
     except Exception as e:
         logger.critical(f"Critical: {e}")
         return "Поддержка уже работает над проблемой... Позвоните в OpenAI."  # Старый фолбек
-
 
 
 async def call_ai(payload: dict) -> str:
@@ -284,10 +282,6 @@ async def call_openai(input_text: str, system_prompt: str, temperature: float = 
     return response_text, response_id
 
 
-
-
-
-
 async def handle_mention(update: Update, context: ContextTypes.DEFAULT_TYPE):
     if not update.message or not update.message.text:
         return
@@ -302,12 +296,6 @@ async def handle_mention(update: Update, context: ContextTypes.DEFAULT_TYPE):
     persona_ctx.setdefault("msg_counter", 0)
     persona_ctx["msg_counter"] += 1
 
-
-
-
-
-
-
     # 5. Store message
     persona_ctx["message_history"].append({
         "text": text,
@@ -315,14 +303,26 @@ async def handle_mention(update: Update, context: ContextTypes.DEFAULT_TYPE):
         "persona": None
     })
 
-    # 6. Generate response
+    text = update.message.text.strip().lower()
+
+    search_context = ""
+    if any(trigger in text for trigger in SEARCH_TRIGGERS):
+        await update.message.reply_text("🌐 Searching...")
+        result = await asyncio.get_event_loop().run_in_executor(
+            None,
+            lambda: searcher.enhanced_search(text)
+        )
+        search_context = result.get("combined_answer", "")
+
+    logger.info("🔍 Injected Search Context:\n%s", search_context[:1000])
+
     payload = build_prompt(
         chat_id=chat_id,
         user_input=text,
         persona_name=current_persona.value,
-        user_id=user_id
+        user_id=user_id,
+        search_context=search_context
     )
-
 
     response = await call_ai(payload)
 
@@ -333,13 +333,9 @@ async def handle_mention(update: Update, context: ContextTypes.DEFAULT_TYPE):
         "persona": current_persona.value
     })
 
-    # # 8. Apply decay (modified)
-    # persona_ctx.update(decay_hooks({
-    #     **persona_ctx["user_hooks"],
-    #     **{"dynamic_hooks": persona_ctx.get("dynamic_hooks", [])}
-    # }))
 
     await update.message.reply_text(response)
+
 
 async def handle_reply(update: Update, context: ContextTypes.DEFAULT_TYPE):
     if not update.message.reply_to_message.from_user.id == context.bot.id:
@@ -365,6 +361,7 @@ async def handle_reply(update: Update, context: ContextTypes.DEFAULT_TYPE):
     )
     response = await call_ai(payload)
     await update.message.reply_text(response)
+
 
 async def handle_file(update: Update, context: ContextTypes.DEFAULT_TYPE):
     # Initialize variables
@@ -420,7 +417,7 @@ async def handle_file(update: Update, context: ContextTypes.DEFAULT_TYPE):
             filename=update.message.document.file_name,
             chunks=chunks
         )
-        
+
         # 6. Generate response with TIMEOUTS
         user_question = update.message.caption or "Резюме документа (5 предложений)"
 
@@ -429,14 +426,14 @@ async def handle_file(update: Update, context: ContextTypes.DEFAULT_TYPE):
             n_results=3,
             where={"chat_id": str(update.message.chat.id)}
         )
-        
+
         top_chunks = results.get("documents", [[]])[0]
         context_passage = "\n\n".join(top_chunks)
-        
+
         prompt = f"""
         Контекст из документа:
         {context_passage}
-        
+
         Вопрос: {user_question}
         """
 
@@ -556,26 +553,21 @@ async def handle_file_query(update: Update, context: ContextTypes.DEFAULT_TYPE):
     # 1. Check triggers
     query = update.message.text.lower()
     is_reply_to_file_summary = (
-        update.message.reply_to_message and
-        update.message.reply_to_message.from_user.id == context.bot.id and
-        update.message.reply_to_message.message_id == context.user_data.get('last_file_message_id')
+            update.message.reply_to_message and
+            update.message.reply_to_message.from_user.id == context.bot.id and
+            update.message.reply_to_message.message_id == context.user_data.get('last_file_message_id')
     )
 
-    if not any(trigger in query for trigger in ["файл", "в файле", "files", "file", "document"]) and not is_reply_to_file_summary:
+    if not any(trigger in query for trigger in
+               ["файл", "в файле", "files", "file", "document"]) and not is_reply_to_file_summary:
         logger.debug(f"Not a file query: '{query}' (reply_to_file={is_reply_to_file_summary})")
         await handle_mention(update, context)
         return
 
-
-
-
     # 3. Query Chroma for top chunks
     query = update.message.text
     # Debug: Show all chunks for this chat_id
-    
 
-
-    
     results = file_chunks_collection.query(
         query_texts=[query],
         n_results=3,
@@ -585,24 +577,21 @@ async def handle_file_query(update: Update, context: ContextTypes.DEFAULT_TYPE):
     logger.info("📄 FILE QUERY TRIGGERED via Chroma")
     logger.info(f"User query: {query}")
     logger.info(f"Trigger: {'keywords' if not is_reply_to_file_summary else 'reply to file summary'}")
-    
+
     top_chunks = results.get("documents", [[]])[0]
     if not top_chunks:
         logger.info("⚠️ No chunks returned from Chroma query")
         await update.message.reply_text("⚠️ Не нашёл ничего в документе по запросу.")
-        return 
+        return
     logger.info(f"Top Chunks count: {len(top_chunks)}")
     context_passage = "\n\n".join(top_chunks)
-    
+
     full_prompt = f"""
     Контекст из документа:
     {context_passage}
-    
+
     Вопрос: {query}
     """
-    
-    
-
 
     # 4. Process with AI (minimal system prompt)
     try:
@@ -660,9 +649,9 @@ async def handle_image(update: Update, context: ContextTypes.DEFAULT_TYPE):
         base64_image = base64.b64encode(photo_bytes.getvalue()).decode('utf-8')
 
         user_question = (
-            update.message.caption or
-            (update.message.reply_to_message.text if update.message.reply_to_message else None) or
-            "Опиши это изображение. "
+                update.message.caption or
+                (update.message.reply_to_message.text if update.message.reply_to_message else None) or
+                "Опиши это изображение. "
         )
 
         # --- NEW: Structured Memory Integration ---
@@ -688,7 +677,7 @@ async def handle_image(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
         processing_msg = await update.message.reply_text("Разглядываю")
         response = openai_client.chat.completions.create(
-            model="gpt-4.1-mini",  #original model 4.1
+            model="gpt-4.1-mini",  # original model 4.1
             messages=[{
                 "role": "user",
                 "content": [
@@ -719,6 +708,7 @@ async def handle_image(update: Update, context: ContextTypes.DEFAULT_TYPE):
         logger.error(f"Image error: {e}")
         await update.message.reply_text("Не вышло. Попробуй другую картинку.")
 
+
 async def handle_voice(update: Update, context: ContextTypes.DEFAULT_TYPE):
     try:
         # 1. Your existing transcription code
@@ -737,21 +727,21 @@ async def handle_voice(update: Update, context: ContextTypes.DEFAULT_TYPE):
         # 2. ONLY NEW PART: Check for file queries
         if any(trigger in user_text.lower() for trigger in ["файл", "в файле", "документ", "в документе", "document"]):
             results = file_chunks_collection.query(
-            query_texts=[user_text],
-            n_results=3,
-            where={"chat_id": str(update.message.chat.id)}
+                query_texts=[user_text],
+                n_results=3,
+                where={"chat_id": str(update.message.chat.id)}
             )
-        
+
             top_chunks = results.get("documents", [[]])[0]
             context_passage = "\n\n".join(top_chunks)
-        
+
             full_prompt = f"""
             Контекст из документа:
             {context_passage}
-        
+
             Вопрос: {user_text}
             """
-        
+
             response = await call_ai({
                 "model": "deepseek-chat",
                 "messages": [{
@@ -781,7 +771,6 @@ async def handle_voice(update: Update, context: ContextTypes.DEFAULT_TYPE):
         await update.message.reply_text("🔇 Ошибка обработки")
 
 
-
 async def group_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
     # Check for either @mention OR reply-to-bot
     bot_username = context.bot.username.lower()
@@ -799,7 +788,6 @@ async def group_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
     chat_id = update.message.chat.id
     user_id = update.effective_user.id
-
 
     # Route to appropriate handler
     if update.message.photo:
@@ -824,14 +812,11 @@ async def group_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
 commands = [
 
     ("mode", set_mode)
- 
+
 ]
 
 for cmd, handler in commands:
     app.add_handler(CommandHandler(cmd, handler))
-
-
-
 
 # ===== 2. GROUP CHAT HANDLER (REPLACE with this) =====
 app.add_handler(MessageHandler(
@@ -839,12 +824,11 @@ app.add_handler(MessageHandler(
     group_handler  # Your custom function that checks @mentions
 ))
 
-#file query handler
+# file query handler
 app.add_handler(MessageHandler(
     filters.TEXT & ~filters.COMMAND,
     handle_file_query  # <-- this function will internally decide
 ))
-
 
 # ===== 1. PRIVATE CHAT HANDLER (keep) =====
 app.add_handler(MessageHandler(
@@ -855,8 +839,6 @@ app.add_handler(MessageHandler(
         handle_mention(update, ctx)
     )
 ))
-
-
 
 # ===== 3. REPLY HANDLER (keep one) =====
 app.add_handler(MessageHandler(
