@@ -16,3 +16,5 @@ python-pptx==0.6.23
 opencv-python-headless==4.9.0.80 
 chromadb==0.4.24
 tqdm==4.66.2
+beautifulsoup4==4.12.3
+lxml==5.2.0
