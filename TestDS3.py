@@ -426,9 +426,16 @@ async def handle_file(update: Update, context: ContextTypes.DEFAULT_TYPE):
             n_results=3,
             where={"chat_id": str(update.message.chat.id)}
         )
-
+        
         top_chunks = results.get("documents", [[]])[0]
-        context_passage = "\n\n".join(top_chunks)
+        top_metadatas = results.get("metadatas", [[]])[0]
+        
+        # Include filenames as context prefix (only if they exist)
+        file_labels = [meta.get("filename", "unknown") for meta in top_metadatas]
+        file_info_text = "\n".join(f"[From file: {name}]" for name in set(file_labels))
+        
+        context_passage = file_info_text + "\n\n" + "\n\n".join(top_chunks)
+        
 
         prompt = f"""
         Контекст из документа:
