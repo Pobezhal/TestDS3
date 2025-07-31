@@ -41,48 +41,48 @@ class ChatMemoryManager:
 
     def add_message(self, role: str, text: str) -> None:
         with self._lock:
-        # 1) Always keep in verbatim queue
+            # 1) Always keep in verbatim queue
             self.verbatim_queue.append({"role": role, "text": text})
-
-        # 2) Increment counter
+    
+            # 2) Increment counter
             self._write_counter += 1
-
-        # 3) Only batch-write every 50 messages
-        if self._write_counter % self.WRITE_BATCH != 0:
-            return
-
-        # 4) Get the oldest 50 messages (not the newest)
-        #    Skip the last 10 so we don't lose recent ones
-        batch_to_store = list(self.verbatim_queue)[10:]  # Oldest 50 (if maxlen=60)
-
-        if not batch_to_store:
-            return
-
-        try:
-            texts = [m["text"] for m in batch_to_store]
-            roles = [m["role"] for m in batch_to_store]
-
-            embeddings = self.embedder.encode_documents(texts)
-
-            ids = [str(uuid4()) for _ in texts]
-            metadatas = [
-                {
-                    "chat_id": str(self.chat_id),
-                    "user_id": str(self.user_id),
-                    "type": "line",
-                    "role": role,
-                }
-                for role in roles
-            ]
-
-            self.chroma.add(
-                documents=texts,
-                embeddings=embeddings,
-                metadatas=metadatas,
-                ids=ids
-            )
-        except Exception as e:
-            logger.warning(f"Chroma batch add failed: {e}")
+    
+            # 3) Only batch-write every 50 messages
+            if self._write_counter % self.WRITE_BATCH != 0:
+                return
+    
+            # 4) Get the oldest 50 messages (not the newest)
+            #    Skip the last 10 so we don't lose recent ones
+            batch_to_store = list(self.verbatim_queue)[10:]  # Oldest 50 (if maxlen=60)
+    
+            if not batch_to_store:
+                return
+    
+            try:
+                texts = [m["text"] for m in batch_to_store]
+                roles = [m["role"] for m in batch_to_store]
+    
+                embeddings = self.embedder.encode_documents(texts)
+    
+                ids = [str(uuid4()) for _ in texts]
+                metadatas = [
+                    {
+                        "chat_id": str(self.chat_id),
+                        "user_id": str(self.user_id),
+                        "type": "line",
+                        "role": role,
+                    }
+                    for role in roles
+                ]
+    
+                self.chroma.add(
+                    documents=texts,
+                    embeddings=embeddings,
+                    metadatas=metadatas,
+                    ids=ids
+                )
+            except Exception as e:
+                logger.warning(f"Chroma batch add failed: {e}")
 
     def build_prompt_parts(self, user_query: str) -> List[str]:
         """
