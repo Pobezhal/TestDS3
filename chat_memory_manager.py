@@ -2,6 +2,8 @@ import threading
 from collections import deque
 from typing import List, Any
 from uuid import uuid4
+import logging
+logger = logging.getLogger(__name__)
 
 class ChatMemoryManager:
     """
@@ -38,7 +40,7 @@ class ChatMemoryManager:
         self.WRITE_BATCH = 50
 
     def add_message(self, role: str, text: str) -> None:
-    with self._lock:
+        with self._lock:
         # 1) Always keep in verbatim queue
         self.verbatim_queue.append({"role": role, "text": text})
 
@@ -95,7 +97,7 @@ class ChatMemoryManager:
             full_history = "\n".join(
                 f"{m['role']}: {m['text']}" for m in self.verbatim_queue
             )
-            parts.append(full_history[-3500:])
+            parts.append(f"ИСТОРИЯ:\n{full_history[-3500:]}")
 
             # 2) Retrieve up to 1200 chars of top-k similar lines
             query_emb = self.embedder.encode_queries([user_query])[0]
@@ -112,6 +114,7 @@ class ChatMemoryManager:
                     break
                 snippet_buf.append(doc)
                 total_len += doc_len
-            parts.append("\n".join(snippet_buf))
+            if snippet_buf:
+                parts.append("ПОХОЖИЕ СООБЩЕНИЯ:\n" + "\n".join(snippet_buf))
 
             return parts
