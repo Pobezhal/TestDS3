@@ -177,8 +177,6 @@ def build_prompt(
 
     # Format history with sender tags
     memory_mgr = context["memory_mgr"]
-    memory_blocks = memory_mgr.build_prompt_parts(user_input)
-    history_str = "\n---\n".join(memory_blocks)
 
     parts = context["memory_mgr"].build_prompt_parts(user_input)
     history_str = "\n---\n".join(parts)
