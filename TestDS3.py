@@ -93,6 +93,9 @@ logging.basicConfig(
 )
 logger = logging.getLogger(__name__)
 
+logging.getLogger("httpx").setLevel(logging.WARNING)
+logging.getLogger("telegram").setLevel(logging.WARNING)
+
 #local_embedder = BetterEmbeddingFunction("multilingual-e5-base")
 # Initialize local embedder with error handling
 try:
