@@ -1,4 +1,8 @@
 # not a malicious thing, just a bot to make fun of my friends!!
+import os
+os.environ["TOKENIZERS_PARALLELISM"] = "false"
+import sys
+sys.modules["onnxruntime"] = type("onnxruntime", (), {"__spec__": type("spec", (), {"name": "onnxruntime"})()})()
 import asyncio  # Добавить в начале файла
 import pytesseract
 from pdf2image import convert_from_path
@@ -11,11 +15,14 @@ from datetime import datetime
 from pathlib import Path
 import json  # <-- Add this line
 import httpx
+import chromadb
+from chromadb.utils import embedding_functions
+chromadb.utils.embedding_functions.DefaultEmbeddingFunction = lambda: None
 from chromadb.config import Settings
 from uuid import uuid4
 import re
-import chromadb
-from chromadb.utils import embedding_functions
+from chat_memory_manager import ChatMemoryManager
+from better_embedder import BetterEmbeddingFunction
 from telegram import Update
 import time
 from telegram.ext import Application, CommandHandler, MessageHandler, filters, ContextTypes
@@ -23,7 +30,7 @@ from telegram import Update, Message, Chat, User
 from pdfminer.high_level import extract_text  # Для PDF
 from docx import Document  # Для DOCX
 import requests
-import os
+
 from PERSONAS import Persona, PERSONAS
 from telegram import Update
 import random
@@ -44,12 +51,22 @@ persona_contexts = defaultdict(dict)
 
 load_dotenv()
 
+
 def switch_persona(chat_id: int, user_id: int, new_persona: Persona) -> dict:
     key = (chat_id, user_id, new_persona.value)
     if key not in persona_contexts:
         persona_contexts[key] = {
             "message_history": deque(maxlen=24),
         }
+        persona_contexts[key]["memory_mgr"] = ChatMemoryManager(
+            chat_id=chat_id,
+            user_id=user_id,
+            chroma_collection=chat_memory_collection,
+            embedder=local_embedder,
+            openai_client=openai_client,
+        )
+
+
     return persona_contexts[key]
 
 
@@ -70,22 +87,39 @@ openai_embedder = embedding_functions.OpenAIEmbeddingFunction(
     model_name="text-embedding-3-small"
 )
 
+logging.basicConfig(
+    format='%(asctime)s - %(name)s - %(levelname)s - %(message)s',
+    level=logging.INFO
+)
+logger = logging.getLogger(__name__)
+
+#local_embedder = BetterEmbeddingFunction("multilingual-e5-base")
+# Initialize local embedder with error handling
+try:
+    local_embedder = BetterEmbeddingFunction("intfloat/multilingual-e5-base")
+    logger.info("✅ Local embedding model 'intfloat/multilingual-e5-base' loaded.")
+except Exception as e:
+    logger.critical(f"❌ Failed to load embedding model: {e}")
+    logger.critical("💡 Tip: Run 'python -c \"from sentence_transformers import SentenceTransformer; SentenceTransformer('intfloat/multilingual-e5-base')\"' to pre-download.")
+    exit(1)
+
 # Global collection: file chunks (we'll filter per chat later)
 file_chunks_collection = chroma_client.get_or_create_collection(
     name="file_chunks",
-    embedding_function=openai_embedder
+    embedding_function=local_embedder
 )
+
+# Collection for chat memory only (separate from files)
+chat_memory_collection = chroma_client.get_or_create_collection(
+    name="chat_memory",
+    embedding_function=local_embedder)
 
 print("OPENAI_KEY_EXISTS:", "OPENAI_API_KEY" in os.environ)  # Debug line
 openai_client = OpenAI(api_key=os.getenv("OPENAI_API_KEY"))
 
 chat_modes = defaultdict(lambda: "normal")
 
-logging.basicConfig(
-    format='%(asctime)s - %(name)s - %(levelname)s - %(message)s',
-    level=logging.INFO
-)
-logger = logging.getLogger(__name__)
+
 
 # Initialize bot
 app = Application.builder().token(os.getenv("BOT_TOKEN")).build()
@@ -139,10 +173,12 @@ def build_prompt(
     )
 
     # Format history with sender tags
-    history_str = "\n".join(
-        f"{msg['sender']} ({msg.get('persona', 'user')}): {msg['text']}"
-        for msg in context["message_history"]
-    )
+    memory_mgr = context["memory_mgr"]
+    memory_blocks = memory_mgr.build_prompt_parts(user_input)
+    history_str = "\n---\n".join(memory_blocks)
+
+    parts = context["memory_mgr"].build_prompt_parts(user_input)
+    history_str = "\n---\n".join(parts)
 
     return {
         "model": "gpt-4.1-mini",
@@ -150,13 +186,13 @@ def build_prompt(
             {
                 "role": "system",
                 "content": (
-                f"{persona['system']}\n\n"
-                f"Если указаны АКТУАЛЬНЫЕ ДАННЫЕ, используй их в ответе.\n"
-                f"Добавляй строку 'Source: ...' ТОЛЬКО с названием источника (например: РИА Новости, BBC, Интерфакс).\n"
-                f"Не добавляй ссылку (URL), кроме случаев, когда пользователь ЯВНО просит: 'дай ссылку', 'link', 'где источник' и т.п.\n\n"
-                f"АКТУАЛЬНЫЕ ДАННЫЕ:\n{search_context}\n\n"
-                f"ИСТОРИЯ:\n{history_str[-3000:]}"
-            )
+                    f"{persona['system']}\n\n"
+                    f"Если указаны АКТУАЛЬНЫЕ ДАННЫЕ, используй их в ответе.\n"
+                    f"Добавляй строку 'Source' только если есть АКТУАЛЬНЫЕ ДАННЫЕ: ...' ТОЛЬКО с названием источника (например: РИА Новости, BBC, Интерфакс).\n"
+                    f"Не добавляй ссылку (URL), кроме случаев, когда пользователь ЯВНО просит: 'дай ссылку', 'link', 'где источник' и т.п.\n\n"
+                    f"АКТУАЛЬНЫЕ ДАННЫЕ:\n{search_context}\n\n"
+                    f"ИСТОРИЯ:\n{history_str}"
+                )
             },
             {
                 "role": "user",
@@ -195,8 +231,8 @@ async def call_deepseek(payload: dict) -> str:
         if isinstance(e, requests.exceptions.Timeout):
             return "Сервер барахлит. Подожди минуту."  # Старая формулировка
         if response.status_code == 429:  # type: ignore
-            return "Слишком много запросов. Остынь."
-        return "API сдох. Попробуй позже."
+            return "Слишком много запросов."
+        return "API не работает. Попробуй позже."
 
     except Exception as e:
         logger.critical(f"Critical: {e}")
@@ -235,51 +271,51 @@ async def call_ai(payload: dict) -> str:
             return "Sorry, the AI service is temporarily unavailable. Please try again later."
 
 
-async def call_openai(input_text: str, system_prompt: str, temperature: float = 0.7, previous_response_id: str = None):
-    headers = {
-        "Authorization": f"Bearer {os.getenv('OPENAI_API_KEY')}",
-        "Content-Type": "application/json",
-    }
+# async def call_openai(input_text: str, system_prompt: str, temperature: float = 0.7, previous_response_id: str = None):
+#     headers = {
+#         "Authorization": f"Bearer {os.getenv('OPENAI_API_KEY')}",
+#         "Content-Type": "application/json",
+#     }
 
-    payload = {
-        "model": "gpt-4o-mini",
-        "input": [
-            {"role": "system", "content": system_prompt},
-            {"role": "user", "content": input_text},
-        ],
-        "temperature": temperature,
-        "store": True,
-        "tools": [{"type": "web_search_preview"}],
-    }
+#     payload = {
+#         "model": "gpt-4o-mini",
+#         "input": [
+#             {"role": "system", "content": system_prompt},
+#             {"role": "user", "content": input_text},
+#         ],
+#         "temperature": temperature,
+#         "store": True,
+#         "tools": [{"type": "web_search_preview"}],
+#     }
 
-    if previous_response_id:
-        payload["previous_response_id"] = previous_response_id
+#     if previous_response_id:
+#         payload["previous_response_id"] = previous_response_id
 
-    async with httpx.AsyncClient(timeout=20.0) as client:
-        response = await client.post(
-            "https://api.openai.com/v1/responses",
-            headers=headers,
-            json=payload,
-        )
+#     async with httpx.AsyncClient(timeout=20.0) as client:
+#         response = await client.post(
+#             "https://api.openai.com/v1/responses",
+#             headers=headers,
+#             json=payload,
+#         )
 
-    response.raise_for_status()
-    data = response.json()
+#     response.raise_for_status()
+#     data = response.json()
 
-    # Extract message text from the output
-    output = data.get("output", [])
-    message_obj = next((item for item in output if item.get("type") == "message"), None)
-    if not message_obj:
-        raise ValueError("No message found in response output")
+#     # Extract message text from the output
+#     output = data.get("output", [])
+#     message_obj = next((item for item in output if item.get("type") == "message"), None)
+#     if not message_obj:
+#         raise ValueError("No message found in response output")
 
-    content_list = message_obj.get("content", [])
-    text_entry = next((c for c in content_list if "text" in c), None)
-    if not text_entry:
-        raise ValueError("No text found in message content")
+#     content_list = message_obj.get("content", [])
+#     text_entry = next((c for c in content_list if "text" in c), None)
+#     if not text_entry:
+#         raise ValueError("No text found in message content")
 
-    response_text = text_entry["text"]
-    response_id = data.get("id")
+#     response_text = text_entry["text"]
+#     response_id = data.get("id")
 
-    return response_text, response_id
+#     return response_text, response_id
 
 
 async def handle_mention(update: Update, context: ContextTypes.DEFAULT_TYPE):
@@ -303,6 +339,8 @@ async def handle_mention(update: Update, context: ContextTypes.DEFAULT_TYPE):
         "persona": None
     })
 
+    persona_ctx["memory_mgr"].add_message("user", text)
+
     text = update.message.text.strip().lower()
 
     search_context = ""
@@ -314,7 +352,7 @@ async def handle_mention(update: Update, context: ContextTypes.DEFAULT_TYPE):
         )
         search_context = result.get("combined_answer", "")
 
-    logger.info("🔍 Injected Search Context:\n%s", search_context[:1000])
+    logger.info("🔍 Injected Search Context:\n%s", search_context[:100])
 
     payload = build_prompt(
         chat_id=chat_id,
@@ -333,6 +371,7 @@ async def handle_mention(update: Update, context: ContextTypes.DEFAULT_TYPE):
         "persona": current_persona.value
     })
 
+    persona_ctx["memory_mgr"].add_message("bot", response)
 
     await update.message.reply_text(response)
 
@@ -353,6 +392,8 @@ async def handle_reply(update: Update, context: ContextTypes.DEFAULT_TYPE):
         "persona": None
     })
 
+    persona_ctx["memory_mgr"].add_message("user", update.message.text)
+
     payload = build_prompt(
         chat_id=chat_id,
         user_input=update.message.text,
@@ -361,6 +402,8 @@ async def handle_reply(update: Update, context: ContextTypes.DEFAULT_TYPE):
     )
     response = await call_ai(payload)
     await update.message.reply_text(response)
+
+    persona_ctx["memory_mgr"].add_message("bot", response)
 
 
 async def handle_file(update: Update, context: ContextTypes.DEFAULT_TYPE):
@@ -426,16 +469,15 @@ async def handle_file(update: Update, context: ContextTypes.DEFAULT_TYPE):
             n_results=3,
             where={"chat_id": str(update.message.chat.id)}
         )
-        
+
         top_chunks = results.get("documents", [[]])[0]
         top_metadatas = results.get("metadatas", [[]])[0]
-        
+
         # Include filenames as context prefix (only if they exist)
         file_labels = [meta.get("filename", "unknown") for meta in top_metadatas]
         file_info_text = "\n".join(f"[From file: {name}]" for name in set(file_labels))
-        
+
         context_passage = file_info_text + "\n\n" + "\n\n".join(top_chunks)
-        
 
         prompt = f"""
         Контекст из документа:
@@ -533,7 +575,6 @@ def split_text_into_chunks(text: str, chunk_size: int = 800, overlap: int = 100)
 def store_chunks_in_chroma(chat_id, user_id, filename, chunks: list[str]):
     """
     Stores text chunks in Chroma with metadata.
-
     Args:
         chat_id (int): Telegram chat ID.
         user_id (int): Telegram user ID.
@@ -542,22 +583,23 @@ def store_chunks_in_chroma(chat_id, user_id, filename, chunks: list[str]):
     """
     ids = [str(uuid4()) for _ in chunks]
     metadatas = [
-        {"chat_id": str(chat_id), "user_id": str(user_id), "filename": filename}
-        for _ in chunks
+        {
+            "chat_id": str(chat_id),
+            "user_id": str(user_id),
+            "filename": filename,
+            "chunk_index": i,
+            "total_chunks": len(chunks)
+        }
+        for i in range(len(chunks))
     ]
-
-    BATCH_SIZE = 100  # Controls how many chunks per embedding call
-
+    BATCH_SIZE = 100
     for i in range(0, len(chunks), BATCH_SIZE):
         file_chunks_collection.add(
             documents=chunks[i:i + BATCH_SIZE],
             metadatas=metadatas[i:i + BATCH_SIZE],
             ids=ids[i:i + BATCH_SIZE]
         )
-
-    print("Chroma volume after persist:", os.listdir("/data/chroma"))
-    logger.info(f"✅ Stored {len(chunks)} chunks for '{filename}' (chat: {chat_id})")
-
+    logger.info(f"✅ Stored {len(chunks)} chunks for '{filename}' (chunk indices 0–{len(chunks)-1})")
 
 
 async def handle_file_query(update: Update, context: ContextTypes.DEFAULT_TYPE):
@@ -640,7 +682,7 @@ async def handle_file_query(update: Update, context: ContextTypes.DEFAULT_TYPE):
                 timeout=12.0
             )
 
-        await update.message.reply_text(response[:1000])
+        await update.message.reply_text(response[:1200])
 
     except Exception as e:
         logger.error(f"File query failed after fallback: {e}")
@@ -688,7 +730,7 @@ async def handle_image(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
         processing_msg = await update.message.reply_text("Разглядываю")
         response = openai_client.chat.completions.create(
-            model="gpt-4.1-mini",  # original model 4.1
+            model="gpt-4o-mini",
             messages=[{
                 "role": "user",
                 "content": [
@@ -702,7 +744,7 @@ async def handle_image(update: Update, context: ContextTypes.DEFAULT_TYPE):
                     }
                 ]
             }],
-            max_tokens=500  # Your original token limit
+            max_tokens=800
         )
 
         # --- NEW: Store Bot Response ---
@@ -764,7 +806,7 @@ async def handle_voice(update: Update, context: ContextTypes.DEFAULT_TYPE):
                 }],
                 "temperature": 0.3
             })
-            await update.message.reply_text(response[:1000])
+            await update.message.reply_text(response[:1200])
             return  # Important! Skip normal handling
 
         # 3. Original behavior for non-file queries
@@ -779,7 +821,28 @@ async def handle_voice(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
     except Exception as e:
         logger.error(f"Voice error: {e}")
-        await update.message.reply_text("🔇 Ошибка обработки")
+        await update.message.reply_text("Error processing voice")
+
+async def list_files(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    chat_id = update.message.chat.id
+    user_id = str(update.effective_user.id)
+
+    # Query Chroma for all unique filenames from this user+chat
+    results = file_chunks_collection.get(
+        where={"$and": [
+            {"chat_id": {"$eq": str(chat_id)}},
+            {"user_id": {"$eq": str(user_id)}}
+        ]}
+    )
+    if not results["documents"]:
+        await update.message.reply_text("No files found.")
+        return
+
+    # Extract unique filenames
+    filenames = {meta["filename"] for meta in results["metadatas"]}
+    file_list = "\n".join(f"📄 {name}" for name in sorted(filenames))
+    await update.message.reply_text(f"Your files:\n{file_list}")
+
 
 
 async def group_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
@@ -822,7 +885,8 @@ async def group_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
 # --------------------------------------
 commands = [
 
-    ("mode", set_mode)
+    ("mode", set_mode),
+    ('files', list_files)
 
 ]
 
@@ -858,7 +922,11 @@ app.add_handler(MessageHandler(
 ))
 
 app.add_handler(MessageHandler(filters.VOICE, handle_voice))
+app.add_handler(CommandHandler("files", list_files))
+
+
+
 
 if __name__ == "__main__":
-    print("⚡ Новый Helper запущен с точным набором функций")
+    print("New TestHelper launched")
     app.run_polling()
