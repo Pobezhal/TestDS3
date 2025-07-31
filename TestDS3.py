@@ -45,6 +45,8 @@ from openai import OpenAI
 from textblob import TextBlob
 from persona_hooks import PERSONA_HOOKS
 import sys
+import warnings
+warnings.filterwarnings("ignore", message="Failed to send telemetry event")
 
 # chat_memories = defaultdict(lambda: deque(maxlen=32))
 persona_contexts = defaultdict(dict)
