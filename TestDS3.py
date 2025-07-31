@@ -333,12 +333,6 @@ async def handle_mention(update: Update, context: ContextTypes.DEFAULT_TYPE):
     persona_ctx.setdefault("msg_counter", 0)
     persona_ctx["msg_counter"] += 1
 
-    # 5. Store message
-    persona_ctx["message_history"].append({
-        "text": text,
-        "sender": "user",
-        "persona": None
-    })
 
     persona_ctx["memory_mgr"].add_message("user", text)
 
@@ -387,11 +381,6 @@ async def handle_reply(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
     # Use structured history instead of chat_memories
     persona_ctx = switch_persona(chat_id, user_id, current_persona)
-    persona_ctx["message_history"].append({
-        "text": update.message.text,
-        "sender": "user",
-        "persona": None
-    })
 
     persona_ctx["memory_mgr"].add_message("user", update.message.text)
 
