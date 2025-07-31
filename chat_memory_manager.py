@@ -103,7 +103,7 @@ class ChatMemoryManager:
             query_emb = self.embedder.encode_queries([user_query])[0]
             results = self.chroma.query(
                 query_embeddings=[query_emb],
-                n_results=10,
+                n_results=3,
                 where={"$and": [{"chat_id": {"$eq": str(self.chat_id)}}, {"user_id": {"$eq": str(self.user_id)}}]},
             )
             snippet_buf: List[str] = []
