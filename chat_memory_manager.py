@@ -17,7 +17,7 @@ class ChatMemoryManager:
         chroma_collection: Any,
         embedder: Any,
         openai_client: Any,
-        memory_n_verbatim: int = 24,
+        memory_n_verbatim: int = 60,
     ):
         # Identifiers
         self.chat_id = chat_id
@@ -34,49 +34,53 @@ class ChatMemoryManager:
         # Internal state
         self.verbatim_queue = deque(maxlen=memory_n_verbatim)
         self._lock = threading.Lock()
+        self._write_counter = 0
+        self.WRITE_BATCH = 50
 
     def add_message(self, role: str, text: str) -> None:
-        with self._lock:
-            # 1) Enqueue verbatim
-            self.verbatim_queue.append({"role": role, "text": text})
+    with self._lock:
+        # 1) Always keep in verbatim queue
+        self.verbatim_queue.append({"role": role, "text": text})
 
-            # 2) Check existing message count for this (chat_id, user_id)
-            #    and enforce max 600 messages
-            MAX_MESSAGES = 600
+        # 2) Increment counter
+        self._write_counter += 1
 
-            results = self.chroma.get(
-                where={
-                    "$and": [
-                        {"chat_id": {"$eq": str(self.chat_id)}},
-                        {"user_id": {"$eq": str(self.user_id)}},
-                        {"type": {"$eq": "line"}}
-                    ]
-                },
-                include=["metadatas"]
-            )
-            message_ids = results["ids"]
-            current_count = len(results["metadatas"])
+        # 3) Only batch-write every 50 messages
+        if self._write_counter % self.WRITE_BATCH != 0:
+            return
 
-            # If we already have 600 or more messages, delete the oldest 10
-            if current_count >= MAX_MESSAGES:
-                ids_to_delete = message_ids[:10]  # Delete oldest 10 to reduce pressure
-                self.chroma.delete(ids=ids_to_delete)
+        # 4) Get the oldest 50 messages (not the newest)
+        #    Skip the last 10 so we don't lose recent ones
+        batch_to_store = list(self.verbatim_queue)[10:]  # Oldest 50 (if maxlen=60)
 
-            # 3) Add new message to Chroma
-            embedding = self.embedder.encode_documents([text])[0]
-            metadata = {
-                "chat_id": self.chat_id,
-                "user_id": self.user_id,
-                "type": "line",
-                "role": role,
-            }
-            doc_id = str(uuid4())
+        if not batch_to_store:
+            return
+
+        try:
+            texts = [m["text"] for m in batch_to_store]
+            roles = [m["role"] for m in batch_to_store]
+
+            embeddings = self.embedder.encode_documents(texts)
+
+            ids = [str(uuid4()) for _ in texts]
+            metadatas = [
+                {
+                    "chat_id": str(self.chat_id),
+                    "user_id": str(self.user_id),
+                    "type": "line",
+                    "role": role,
+                }
+                for role in roles
+            ]
+
             self.chroma.add(
-                documents=[text],
-                embeddings=[embedding],
-                metadatas=[metadata],
-                ids=[doc_id]
+                documents=texts,
+                embeddings=embeddings,
+                metadatas=metadatas,
+                ids=ids
             )
+        except Exception as e:
+            logger.warning(f"Chroma batch add failed: {e}")
 
     def build_prompt_parts(self, user_query: str) -> List[str]:
         """
