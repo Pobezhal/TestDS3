@@ -42,10 +42,10 @@ class ChatMemoryManager:
     def add_message(self, role: str, text: str) -> None:
         with self._lock:
         # 1) Always keep in verbatim queue
-        self.verbatim_queue.append({"role": role, "text": text})
+            self.verbatim_queue.append({"role": role, "text": text})
 
         # 2) Increment counter
-        self._write_counter += 1
+            self._write_counter += 1
 
         # 3) Only batch-write every 50 messages
         if self._write_counter % self.WRITE_BATCH != 0:
