@@ -124,4 +124,4 @@ class ChatMemoryManager:
                 if snippet_buf:
                     parts.append("ПОХОЖИЕ СООБЩЕНИЯ:\n" + "\n".join(snippet_buf))
     
-                return parts
+            return parts
