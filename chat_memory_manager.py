@@ -3,6 +3,7 @@ from collections import deque
 from typing import List, Any
 from uuid import uuid4
 import logging
+from datetime import datetime
 logger = logging.getLogger(__name__)
 
 class ChatMemoryManager:
@@ -42,8 +43,9 @@ class ChatMemoryManager:
 
     def add_message(self, role: str, text: str) -> None:
         with self._lock:
+            timestamp = datetime.utcnow().isoformat()
             # 1) Always keep in verbatim queue
-            self.verbatim_queue.append({"role": role, "text": text})
+            self.verbatim_queue.append({"role": role, "text": text, "timestamp": timestamp})
     
             # 2) Increment counter
             self._write_counter += 1
@@ -62,6 +64,7 @@ class ChatMemoryManager:
             try:
                 texts = [m["text"] for m in batch_to_store]
                 roles = [m["role"] for m in batch_to_store]
+                timestamps = [m["timestamp"] for m in batch_to_store]
     
                 embeddings = self.embedder.encode_documents(texts)
     
@@ -72,8 +75,9 @@ class ChatMemoryManager:
                         "user_id": str(self.user_id),
                         "type": "line",
                         "role": role,
+                        "timestamp": timestamp,
                     }
-                    for role in roles
+                    for role, timestamp in zip(roles, timestamps)
                 ]
     
                 self.chroma.add(
