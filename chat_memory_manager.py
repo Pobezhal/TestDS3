@@ -13,7 +13,7 @@ class ChatMemoryManager:
       - verbatim history tail (capped)
       - similarity-based snippet retrieval
     """
-    TRIGGERS = ["remember", "in past", "previously", "remind", "recall", "вспомни", "напомни", "ранее", "до этого"]
+    TRIGGERS = ["remember", "in past", "previously", "remind", "recall", "вспомни", "напомни", "ранее", "до этого", "помнишь", "мы говорили", "вчера", "позавчера"]
     def __init__(
         self,
         chat_id: str,
