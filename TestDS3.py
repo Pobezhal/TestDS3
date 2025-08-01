@@ -57,9 +57,7 @@ load_dotenv()
 def switch_persona(chat_id: int, user_id: int, new_persona: Persona) -> dict:
     key = (chat_id, user_id, new_persona.value)
     if key not in persona_contexts:
-        persona_contexts[key] = {
-            "message_history": deque(maxlen=24),
-        }
+        persona_contexts[key] = {}
         persona_contexts[key]["memory_mgr"] = ChatMemoryManager(
             chat_id=chat_id,
             user_id=user_id,
@@ -362,11 +360,11 @@ async def handle_mention(update: Update, context: ContextTypes.DEFAULT_TYPE):
     response = await call_ai(payload)
 
     # 7. Store bot response
-    persona_ctx["message_history"].append({
-        "text": response,
-        "sender": "bot",
-        "persona": current_persona.value
-    })
+    # persona_ctx["message_history"].append({
+    #     "text": response,
+    #     "sender": "bot",
+    #     "persona": current_persona.value
+    # })
 
     persona_ctx["memory_mgr"].add_message("bot", response)
 
@@ -512,12 +510,14 @@ async def handle_file(update: Update, context: ContextTypes.DEFAULT_TYPE):
         # 7. Update persona
         chat_id = update.message.chat.id
         persona_ctx = switch_persona(chat_id, update.effective_user.id, Persona(chat_modes[chat_id]))
-        persona_ctx["message_history"].append({
-            "text": response,
-            "sender": "bot",
-            "persona": chat_modes[chat_id]
-        })
+        # persona_ctx["message_history"].append({
+        #     "text": response,
+        #     "sender": "bot",
+        #     "persona": chat_modes[chat_id]
+        # })
 
+        persona_ctx["memory_mgr"].add_message("bot", response)
+        
         await progress_msg.edit_text(response[:1200])
 
         context.user_data.update({
@@ -674,6 +674,8 @@ async def handle_file_query(update: Update, context: ContextTypes.DEFAULT_TYPE):
                 timeout=12.0
             )
 
+        persona_ctx["memory_mgr"].add_message("bot", response)
+        
         await update.message.reply_text(response[:1200])
 
     except Exception as e:
@@ -706,12 +708,14 @@ async def handle_image(update: Update, context: ContextTypes.DEFAULT_TYPE):
         persona_ctx = switch_persona(chat_id, user_id, current_persona)
 
         # Store image event (formatted to match your style)
-        persona_ctx["message_history"].append({
-            "text": f"[Image: {user_question}]",
-            "sender": "user",
-            "persona": None
-        })
+        # persona_ctx["message_history"].append({
+        #     "text": f"[Image: {user_question}]",
+        #     "sender": "user",
+        #     "persona": None
+        # })
+        persona_ctx["memory_mgr"].add_message("user", f"[Image: {user_question}]")
 
+        
         # --- Your Original API Call (EXACTLY AS IS) ---
         persona_config = PERSONAS[current_persona]
         prompt_text = (
@@ -741,11 +745,11 @@ async def handle_image(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
         # --- NEW: Store Bot Response ---
         analysis = response.choices[0].message.content
-        persona_ctx["message_history"].append({
-            "text": analysis,
-            "sender": "bot",
-            "persona": current_persona.value
-        })
+        # persona_ctx["message_history"].append({
+        #     "text": analysis,
+        #     "sender": "bot",
+        #     "persona": current_persona.value
+        # })
 
         persona_ctx["memory_mgr"].add_message("bot", analysis)
 
