@@ -747,6 +747,9 @@ async def handle_image(update: Update, context: ContextTypes.DEFAULT_TYPE):
             "persona": current_persona.value
         })
 
+        persona_ctx["memory_mgr"].add_message("bot", analysis)
+
+        
         await processing_msg.edit_text(analysis[:1000])  # Your original truncation
 
     except Exception as e:
