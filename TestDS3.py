@@ -596,6 +596,8 @@ def store_chunks_in_chroma(chat_id, user_id, filename, chunks: list[str]):
 
 async def handle_file_query(update: Update, context: ContextTypes.DEFAULT_TYPE):
     # 1. Check triggers
+    if not update.message or not update.message.text:
+        return
     query = update.message.text.lower()
     is_reply_to_file_summary = (
             update.message.reply_to_message and
@@ -929,3 +931,4 @@ app.add_handler(CommandHandler("files", list_files))
 if __name__ == "__main__":
     print("New TestHelper launched")
     app.run_polling()
+
