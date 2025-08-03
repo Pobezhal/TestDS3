@@ -2,7 +2,7 @@
 import os
 os.environ["TOKENIZERS_PARALLELISM"] = "false"
 import sys
-sys.modules["onnxruntime"] = type("onnxruntime", (), {"__spec__": type("spec", (), {"name": "onnxruntime"})()})()
+# sys.modules["onnxruntime"] = type("onnxruntime", (), {"__spec__": type("spec", (), {"name": "onnxruntime"})()})()
 import asyncio  # Добавить в начале файла
 import pytesseract
 from pdf2image import convert_from_path
@@ -22,7 +22,7 @@ from chromadb.config import Settings
 from uuid import uuid4
 import re
 from chat_memory_manager import ChatMemoryManager
-from better_embedder import BetterEmbeddingFunction
+# from better_embedder import BetterEmbeddingFunction
 from telegram import Update
 import time
 from telegram.ext import Application, CommandHandler, MessageHandler, filters, ContextTypes
@@ -62,7 +62,7 @@ def switch_persona(chat_id: int, user_id: int, new_persona: Persona) -> dict:
             chat_id=chat_id,
             user_id=user_id,
             chroma_collection=chat_memory_collection,
-            embedder=local_embedder,
+            embedder=openai_embedder,
             openai_client=openai_client,
         )
 
@@ -102,18 +102,18 @@ logging.getLogger("telegram").setLevel(logging.WARNING)
 
 #local_embedder = BetterEmbeddingFunction("multilingual-e5-base")
 # Initialize local embedder with error handling
-try:
-    local_embedder = BetterEmbeddingFunction("intfloat/multilingual-e5-base")
-    logger.info("✅ Local embedding model 'intfloat/multilingual-e5-base' loaded.")
-    _ = local_embedder.encode_documents(["trigger"])
-    logger.info("✅ Embedder preloaded with dummy input.")
-except Exception as e:
-    logger.critical(f"❌ Failed to load embedding model: {e}")
-    logger.critical("💡 Tip: Run 'python -c \"from sentence_transformers import SentenceTransformer; SentenceTransformer('intfloat/multilingual-e5-base')\"' to pre-download.")
-    exit(1)
+# try:
+#     local_embedder = BetterEmbeddingFunction("intfloat/multilingual-e5-base")
+#     logger.info("✅ Local embedding model 'intfloat/multilingual-e5-base' loaded.")
+#     _ = local_embedder.encode_documents(["trigger"])
+#     logger.info("✅ Embedder preloaded with dummy input.")
+# except Exception as e:
+#     logger.critical(f"❌ Failed to load embedding model: {e}")
+#     logger.critical("💡 Tip: Run 'python -c \"from sentence_transformers import SentenceTransformer; SentenceTransformer('intfloat/multilingual-e5-base')\"' to pre-download.")
+#     exit(1)
 
-print(f"🔒 Embedder class: {local_embedder.__class__.__name__}")
-print(f"🧬 Model loaded: multilingual-e5-base")
+# print(f"🔒 Embedder class: {local_embedder.__class__.__name__}")
+# print(f"🧬 Model loaded: multilingual-e5-base")
 
 def get_or_warn_collection(client, name, embedder):
     try:
@@ -126,17 +126,17 @@ def get_or_warn_collection(client, name, embedder):
 
 
 # Global collection: file chunks (we'll filter per chat later)
-# file_chunks_collection = chroma_client.get_or_create_collection(
-#     name="file_chunks",
-#     embedding_function=local_embedder
-# )
-file_chunks_collection = get_or_warn_collection(chroma_client, "file_chunks", local_embedder)
+file_chunks_collection = chroma_client.get_or_create_collection(
+    name="file_chunks",
+    embedding_function=openai_embedder
+)
+# file_chunks_collection = get_or_warn_collection(chroma_client, "file_chunks", local_embedder)
 
 # Collection for chat memory only (separate from files)
-# chat_memory_collection = chroma_client.get_or_create_collection(
-#     name="chat_memory",
-#     embedding_function=local_embedder)
-chat_memory_collection = get_or_warn_collection(chroma_client, "chat_memory", local_embedder)
+chat_memory_collection = chroma_client.get_or_create_collection(
+    name="chat_memory",
+    embedding_function=openai_embedder)
+# chat_memory_collection = get_or_warn_collection(chroma_client, "chat_memory", local_embedder)
 
 
 print("OPENAI_KEY_EXISTS:", "OPENAI_API_KEY" in os.environ)  # Debug line
@@ -959,6 +959,7 @@ app.add_handler(CommandHandler("files", list_files))
 if __name__ == "__main__":
     print("New TestHelper launched")
     app.run_polling()
+
 
 
 
