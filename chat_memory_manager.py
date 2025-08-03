@@ -66,7 +66,7 @@ class ChatMemoryManager:
                 roles = [m["role"] for m in batch_to_store]
                 timestamps = [m["timestamp"] for m in batch_to_store]
     
-                embeddings = self.embedder.encode_documents(texts)
+                embeddings = self.embedder.embed_documents(texts)
     
                 ids = [str(uuid4()) for _ in texts]
                 metadatas = [
@@ -107,7 +107,7 @@ class ChatMemoryManager:
 
             if any(trigger in user_query.lower() for trigger in self.TRIGGERS):
                 # 2) Retrieve up to 1200 chars of top-k similar lines
-                query_emb = self.embedder.encode_queries([user_query])[0]
+                query_emb = self.embedder.embed_query(user_query)
                 results = self.chroma.query(
                     query_embeddings=[query_emb],
                     n_results=4,
@@ -125,3 +125,4 @@ class ChatMemoryManager:
                     parts.append("ПОХОЖИЕ СООБЩЕНИЯ:\n" + "\n".join(snippet_buf))
     
             return parts
+
