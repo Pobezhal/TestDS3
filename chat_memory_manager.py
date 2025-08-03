@@ -107,7 +107,7 @@ class ChatMemoryManager:
 
             if any(trigger in user_query.lower() for trigger in self.TRIGGERS):
                 # 2) Retrieve up to 1200 chars of top-k similar lines
-                query_emb = self.embedder.embed_query(user_query)
+                query_emb = self.embedder.embed_documents([user_query])[0]
                 results = self.chroma.query(
                     query_embeddings=[query_emb],
                     n_results=4,
@@ -125,4 +125,5 @@ class ChatMemoryManager:
                     parts.append("ПОХОЖИЕ СООБЩЕНИЯ:\n" + "\n".join(snippet_buf))
     
             return parts
+
 
