@@ -126,12 +126,6 @@ def get_or_warn_collection(client, name, embedder):
         print(f"⚠️ Failed to get '{name}', creating new. Reason: {e}")
         return client.create_collection(name=name, embedding_function=embedder)
 
-for col in ["file_chunks", "chat_memory"]:
-    try:
-        chroma_client.delete_collection(col)
-        print(f"🧹 Deleted Chroma collection: {col}")
-    except Exception as e:
-        print(f"⚠️ Failed to delete collection '{col}': {e}")
 
 # Global collection: file chunks (we'll filter per chat later)
 file_chunks_collection = chroma_client.get_or_create_collection(
@@ -967,6 +961,7 @@ app.add_handler(CommandHandler("files", list_files))
 if __name__ == "__main__":
     print("New TestHelper launched")
     app.run_polling()
+
 
 
 
