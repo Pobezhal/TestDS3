@@ -81,6 +81,10 @@ chroma_client = chromadb.PersistentClient(path="/data/chroma")
 
 print("Chroma contents:", os.listdir("/data/chroma"))
 
+print("📦 Checking existing Chroma collections...")
+for col in chroma_client.list_collections():
+    print(f"🧠 Found collection: {col.name}")
+
 # Use OpenAI for embeddings
 openai_embedder = embedding_functions.OpenAIEmbeddingFunction(
     api_key=os.getenv("OPENAI_API_KEY"),
@@ -106,16 +110,32 @@ except Exception as e:
     logger.critical("💡 Tip: Run 'python -c \"from sentence_transformers import SentenceTransformer; SentenceTransformer('intfloat/multilingual-e5-base')\"' to pre-download.")
     exit(1)
 
+print(f"🔒 Embedder class: {local_embedder.__class__.__name__}")
+print(f"🧬 Model loaded: multilingual-e5-base")
+
+def get_or_warn_collection(client, name, embedder):
+    try:
+        collection = client.get_collection(name=name)
+        print(f"✅ Reusing existing Chroma collection: {name}")
+        return collection
+    except Exception as e:
+        print(f"⚠️ Failed to get '{name}', creating new. Reason: {e}")
+        return client.create_collection(name=name, embedding_function=embedder)
+
+
 # Global collection: file chunks (we'll filter per chat later)
-file_chunks_collection = chroma_client.get_or_create_collection(
-    name="file_chunks",
-    embedding_function=local_embedder
-)
+# file_chunks_collection = chroma_client.get_or_create_collection(
+#     name="file_chunks",
+#     embedding_function=local_embedder
+# )
+file_chunks_collection = get_or_warn_collection(chroma_client, "file_chunks", local_embedder)
 
 # Collection for chat memory only (separate from files)
-chat_memory_collection = chroma_client.get_or_create_collection(
-    name="chat_memory",
-    embedding_function=local_embedder)
+# chat_memory_collection = chroma_client.get_or_create_collection(
+#     name="chat_memory",
+#     embedding_function=local_embedder)
+chat_memory_collection = get_or_warn_collection(chroma_client, "chat_memory", local_embedder)
+
 
 print("OPENAI_KEY_EXISTS:", "OPENAI_API_KEY" in os.environ)  # Debug line
 openai_client = OpenAI(api_key=os.getenv("OPENAI_API_KEY"))
@@ -676,6 +696,12 @@ async def handle_file_query(update: Update, context: ContextTypes.DEFAULT_TYPE):
                 timeout=12.0
             )
 
+        persona_ctx = switch_persona(
+            chat_id=update.message.chat.id,
+            user_id=update.effective_user.id,
+            new_persona=Persona(chat_modes[update.message.chat.id])
+        )
+        
         persona_ctx["memory_mgr"].add_message("bot", response)
         
         await update.message.reply_text(response[:1200])
@@ -931,4 +957,5 @@ app.add_handler(CommandHandler("files", list_files))
 if __name__ == "__main__":
     print("New TestHelper launched")
     app.run_polling()
+
 
