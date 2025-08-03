@@ -78,8 +78,7 @@ searcher = MCPSearchFunction(
 )
 
 chroma_client = chromadb.PersistentClient(path="/data/chroma")
-chroma_client.delete_collection("file_chunks")
-chroma_client.delete_collection("chat_memory")
+
 
 
 print("Chroma contents:", os.listdir("/data/chroma"))
@@ -962,6 +961,7 @@ app.add_handler(CommandHandler("files", list_files))
 if __name__ == "__main__":
     print("New TestHelper launched")
     app.run_polling()
+
 
 
 
