@@ -105,6 +105,8 @@ logging.getLogger("telegram").setLevel(logging.WARNING)
 try:
     local_embedder = BetterEmbeddingFunction("intfloat/multilingual-e5-base")
     logger.info("✅ Local embedding model 'intfloat/multilingual-e5-base' loaded.")
+    _ = local_embedder.encode_documents(["trigger"])
+    logger.info("✅ Embedder preloaded with dummy input.")
 except Exception as e:
     logger.critical(f"❌ Failed to load embedding model: {e}")
     logger.critical("💡 Tip: Run 'python -c \"from sentence_transformers import SentenceTransformer; SentenceTransformer('intfloat/multilingual-e5-base')\"' to pre-download.")
@@ -957,5 +959,6 @@ app.add_handler(CommandHandler("files", list_files))
 if __name__ == "__main__":
     print("New TestHelper launched")
     app.run_polling()
+
 
 
