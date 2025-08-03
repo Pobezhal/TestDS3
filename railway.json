@@ -8,8 +8,7 @@
       "DEEPSEEK_API_KEY": "${{DEEPSEEK_API_KEY}}",
       "OPENAI_API_KEY": "${{OPENAI_API_KEY}}",
       "PYTHONUNBUFFERED": "1",
-      "TESSDATA_PREFIX": "/usr/share/tesseract-ocr/4.00/tessdata",
-      "HF_HOME": "/data/hf_cache"
+      "TESSDATA_PREFIX": "/usr/share/tesseract-ocr/4.00/tessdata"
     },
     "volumes": [
       {
@@ -37,4 +36,5 @@
     }
   }
 }
+
 
