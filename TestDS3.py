@@ -215,9 +215,9 @@ def build_prompt(
                     f"Если указаны АКТУАЛЬНЫЕ ДАННЫЕ, используй их в ответе.\n"
                     f"Добавляй строку 'Source' только если есть АКТУАЛЬНЫЕ ДАННЫЕ: ...' ТОЛЬКО с названием источника (например: РИА Новости, BBC, Интерфакс).\n"
                     f"Не добавляй ссылку (URL), кроме случаев, когда пользователь ЯВНО просит: 'дай ссылку', 'link', 'где источник' и т.п.\n\n"
-                    f"АКТУАЛЬНЫЕ ДАННЫЕ:\n{search_context}\n\n"
+                    + ("АКТУАЛЬНЫЕ ДАННЫЕ:\n" + search_context.strip() + "\n\n" if search_context.strip() else "")
                     f"ИСТОРИЯ:\n{history_str}"
-                )
+                ))
             },
             {
                 "role": "user",
@@ -961,6 +961,7 @@ app.add_handler(CommandHandler("files", list_files))
 if __name__ == "__main__":
     print("New TestHelper launched")
     app.run_polling()
+
 
 
 
