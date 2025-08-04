@@ -62,7 +62,8 @@ class ChatMemoryManager:
                 return
     
             try:
-                texts = [m["text"] for m in batch_to_store]
+                # texts = [m["text"] for m in batch_to_store]
+                texts = [f"{m['role']}: {m['text']}" for m in batch_to_store]
                 roles = [m["role"] for m in batch_to_store]
                 timestamps = [m["timestamp"] for m in batch_to_store]
     
@@ -143,6 +144,7 @@ class ChatMemoryManager:
                 logger.debug("💬 No memory trigger in query: '%s'", user_query[:100])
     
             return parts
+
 
 
 
