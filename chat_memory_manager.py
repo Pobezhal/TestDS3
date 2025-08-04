@@ -133,7 +133,7 @@ class ChatMemoryManager:
     
                     if snippet_buf:
                         logger.info("✅ Added %d memory snippets (%d chars)", len(snippet_buf), total_len)
-                        parts.append("АКТУАЛЬНЫЕ ДАННЫЕ: " + " | ".join(snippet_buf))
+                        parts.append("ЛИЧНЫЕ ДАННЫЕ: " + " | ".join(snippet_buf))
                     else:
                         logger.info("🟡 No snippets added — result list empty or too long")
     
@@ -143,6 +143,7 @@ class ChatMemoryManager:
                 logger.debug("💬 No memory trigger in query: '%s'", user_query[:100])
     
             return parts
+
 
 
 
