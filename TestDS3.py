@@ -217,7 +217,7 @@ def build_prompt(
                     f"Не добавляй ссылку (URL), кроме случаев, когда пользователь ЯВНО просит: 'дай ссылку', 'link', 'где источник' и т.п.\n\n"
                     f"Не добавляй 'Source' для ЛИЧНЫЕ ДАННЫЕ. ЛИЧНЫЕ ДАННЫЕ — это из прошлых сообщений пользователя.\n"
                     + ("АКТУАЛЬНЫЕ ДАННЫЕ:\n" + search_context.strip() + "\n\n" if search_context.strip() else "")
-                    + f"ИСТОРИЯ:\n{history_str}"
+                    + history_str
                 )
             },
             {
@@ -962,6 +962,7 @@ app.add_handler(CommandHandler("files", list_files))
 if __name__ == "__main__":
     print("New TestHelper launched")
     app.run_polling()
+
 
 
 
