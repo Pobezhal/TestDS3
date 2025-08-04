@@ -87,8 +87,12 @@ class ChatMemoryManager:
                     metadatas=metadatas,
                     ids=ids
                 )
+                logger.info("💾 BATCH WRITTEN to Chroma: %d messages (chat_id=%s, user_id=%s)", 
+                            len(batch_to_store), self.chat_id, self.user_id)
+            
             except Exception as e:
                 logger.warning(f"Chroma batch add failed: {e}")
+                
 
     
     def build_prompt_parts(self, user_query: str) -> List[str]:
@@ -139,6 +143,7 @@ class ChatMemoryManager:
                 logger.debug("💬 No memory trigger in query: '%s'", user_query[:100])
     
             return parts
+
 
 
 
