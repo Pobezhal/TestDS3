@@ -39,7 +39,7 @@ class ChatMemoryManager:
         self.verbatim_queue = deque(maxlen=memory_n_verbatim)
         self._lock = threading.Lock()
         self._write_counter = 0
-        self.WRITE_BATCH = 30
+        self.WRITE_BATCH = 5
 
     def add_message(self, role: str, text: str) -> None:
         with self._lock:
@@ -92,41 +92,54 @@ class ChatMemoryManager:
 
     
     def build_prompt_parts(self, user_query: str) -> List[str]:
-        """
-        Construct prompt blocks:
-          1. Verbatim tail (last 3500 chars of raw history)
-          2. Similar snippets (up to 1200 chars from Chroma)
-        """
         with self._lock:
             parts: List[str] = []
-
-            # 1) Verbatim tail: join the in-memory queue and cap to 3500 chars
-            full_history = "\n".join(
-                f"{m['role']}: {m['text']}" for m in self.verbatim_queue
-            )
+    
+            # 1) Verbatim tail (last ~3500 chars)
+            full_history = "\n".join(f"{m['role']}: {m['text']}" for m in self.verbatim_queue)
             parts.append(f"ИСТОРИЯ:\n{full_history[-3500:]}")
-
+    
+            # 2) Trigger-based memory search
             if any(trigger in user_query.lower() for trigger in self.TRIGGERS):
-                # 2) Retrieve up to 1200 chars of top-k similar lines
-                query_emb = self.embedder([user_query])[0]
-
-                results = self.chroma.query(
-                    query_embeddings=[query_emb],
-                    n_results=4,
-                    where={"$and": [{"chat_id": {"$eq": str(self.chat_id)}}, {"user_id": {"$eq": str(self.user_id)}}]},
-                )
-                snippet_buf: List[str] = []
-                total_len = 0
-                for doc in results.get("documents", [[]])[0]:
-                    doc_len = len(doc)
-                    if total_len + doc_len > 1200:
-                        break
-                    snippet_buf.append(doc)
-                    total_len += doc_len
-                if snippet_buf:
-                    parts.append("ПОХОЖИЕ СООБЩЕНИЯ:\n" + "\n".join(snippet_buf))
+                logger.info("🧠 MEMORY SEARCH TRIGGERED via query: '%s'", user_query[:100])
+                try:
+                    query_emb = self.embedder([user_query])[0]
+                    results = self.chroma.query(
+                        query_embeddings=[query_emb],
+                        n_results=4,
+                        where={
+                            "$and": [
+                                {"chat_id": {"$eq": str(self.chat_id)}},
+                                {"user_id": {"$eq": str(self.user_id)}}
+                            ]
+                        },
+                    )
+                    documents = results.get("documents", [[]])[0]
+                    logger.info("📥 Chroma returned %d documents", len(documents))
+    
+                    snippet_buf = []
+                    total_len = 0
+                    for doc in documents:
+                        doc_len = len(doc)
+                        if total_len + doc_len > 1200:
+                            logger.debug("🛑 Snippet buffer full at %d chars", total_len)
+                            break
+                        snippet_buf.append(doc)
+                        total_len += doc_len
+    
+                    if snippet_buf:
+                        logger.info("✅ Added %d memory snippets (%d chars)", len(snippet_buf), total_len)
+                        parts.append("ПОХОЖИЕ СООБЩЕНИЯ:\n" + "\n".join(snippet_buf))
+                    else:
+                        logger.info("🟡 No snippets added — result list empty or too long")
+    
+                except Exception as e:
+                    logger.error("💥 Chroma query failed: %s", e, exc_info=True)
+            else:
+                logger.debug("💬 No memory trigger in query: '%s'", user_query[:100])
     
             return parts
+
 
 
 
