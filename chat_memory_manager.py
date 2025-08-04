@@ -39,7 +39,7 @@ class ChatMemoryManager:
         self.verbatim_queue = deque(maxlen=memory_n_verbatim)
         self._lock = threading.Lock()
         self._write_counter = 0
-        self.WRITE_BATCH = 5
+        self.WRITE_BATCH = 30
 
     def add_message(self, role: str, text: str) -> None:
         with self._lock:
@@ -133,7 +133,7 @@ class ChatMemoryManager:
     
                     if snippet_buf:
                         logger.info("✅ Added %d memory snippets (%d chars)", len(snippet_buf), total_len)
-                        parts.append("ПОХОЖИЕ СООБЩЕНИЯ:\n" + "\n".join(snippet_buf))
+                        parts.append("АКТУАЛЬНЫЕ ДАННЫЕ: " + " | ".join(snippet_buf))
                     else:
                         logger.info("🟡 No snippets added — result list empty or too long")
     
@@ -143,6 +143,7 @@ class ChatMemoryManager:
                 logger.debug("💬 No memory trigger in query: '%s'", user_query[:100])
     
             return parts
+
 
 
 
