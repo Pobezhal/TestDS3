@@ -240,7 +240,7 @@ def build_prompt(
         + ("АКТУАЛЬНЫЕ ДАННЫЕ:\n" + search_context.strip() + "\n\n" if search_context.strip() else "")
         + history_str
     )
-    logger.info("📝 FULL PROMPT: %s", final_content)
+    # logger.info("📝 FULL PROMPT: %s", final_content)
     return {
         "model": "gpt-4.1-mini",
         "messages": [
@@ -393,7 +393,7 @@ async def handle_mention(update: Update, context: ContextTypes.DEFAULT_TYPE):
         )
         search_context = result.get("combined_answer", "")
 
-    logger.info("🔍 Injected Search Context:\n%s", search_context[:100])
+    # logger.info("🔍 Injected Search Context:\n%s", search_context[:100])
 
     payload = build_prompt(
         chat_id=chat_id,
@@ -668,8 +668,8 @@ async def handle_file_query(update: Update, context: ContextTypes.DEFAULT_TYPE):
     )
 
     logger.info("📄 FILE QUERY TRIGGERED via Chroma")
-    logger.info(f"User query: {query}")
-    logger.info(f"Trigger: {'keywords' if not is_reply_to_file_summary else 'reply to file summary'}")
+    # logger.info(f"User query: {query}")
+    # logger.info(f"Trigger: {'keywords' if not is_reply_to_file_summary else 'reply to file summary'}")
 
     top_chunks = results.get("documents", [[]])[0]
     if not top_chunks:
@@ -983,6 +983,7 @@ app.add_handler(CommandHandler("files", list_files))
 if __name__ == "__main__":
     print("New TestHelper launched")
     app.run_polling()
+
 
 
 
