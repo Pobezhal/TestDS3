@@ -106,7 +106,7 @@ class ChatMemoryManager:
     
             # 2) Trigger-based memory search
             if any(trigger in user_query.lower() for trigger in self.TRIGGERS):
-                logger.info("🧠 MEMORY SEARCH TRIGGERED via query: '%s'", user_query[:100])
+                logger.info("🧠 MEMORY SEARCH TRIGGERED via query: '%s'", user_query[:10])
                 try:
                     query_emb = self.embedder([user_query])[0]
                     results = self.chroma.query(
@@ -133,7 +133,7 @@ class ChatMemoryManager:
                         total_len += doc_len
     
                     if snippet_buf:
-                        logger.info("✅ Added snippets: %s", " | ".join(snippet_buf))  # LOG SNIPPETS
+                        logger.info("✅ Added snippets: %s")  # LOG SNIPPETS
                         parts.append("ЛИЧНЫЕ ДАННЫЕ: " + " | ".join(snippet_buf))
                     else:
                         logger.info("🟡 No snippets added — result list empty or too long")
@@ -144,6 +144,7 @@ class ChatMemoryManager:
                 logger.debug("💬 No memory trigger in query: '%s'", user_query[:100])
     
             return parts
+
 
 
 
